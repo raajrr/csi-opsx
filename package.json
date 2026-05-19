@@ -1,0 +1,26 @@
+﻿{
+  "name": "csi-opsx",
+  "version": "0.1.0",
+  "description": "OpenSpec wrapper with grilling for explore phase and automated review loops for propose phase.",
+  "type": "module",
+  "bin": {
+    "csi-opsx": "./dist/bin/cli.js"
+  },
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc --noEmit",
+    "dev": "tsup --watch",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "commander": "^12.0.0",
+    "openspec": "latest"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "tsup": "^8.0.0",
+    "typescript": "^5.0.0",
+    "vitest": "^1.0.0"
+  }
+}
