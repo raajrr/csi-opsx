@@ -328,7 +328,7 @@ Run: `npm test`
 
 Expected: PASS — all 7 tool-detection tests pass.
 
-- [ ] **Step 5: Commit**
+- [X] **Step 5: Commit**
 
 ```bash
 git add src/lib/tool-detection.ts src/lib/__tests__/tool-detection.test.ts
