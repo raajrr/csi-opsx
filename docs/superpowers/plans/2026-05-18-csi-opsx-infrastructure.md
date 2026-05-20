@@ -138,7 +138,7 @@ export default defineConfig({
 });
 ```
 
-- [ ] **Step 5: Create vitest.config.ts**
+- [X] **Step 5: Create vitest.config.ts**
 
 ```ts
 import { defineConfig } from 'vitest/config';
@@ -150,13 +150,13 @@ export default defineConfig({
 });
 ```
 
-- [ ] **Step 6: Install dependencies**
+- [X] **Step 6: Install dependencies**
 
 Run: `npm install`
 
 Expected: `node_modules/` created, lock file written, no errors.
 
-- [ ] **Step 7: Commit**
+- [X] **Step 7: Commit**
 
 ```bash
 git init
@@ -171,7 +171,7 @@ git commit -m "chore: scaffold project with TypeScript, tsup, and vitest"
 **Files:**
 - Create: `src/lib/types.ts`
 
-- [ ] **Step 1: Write src/lib/types.ts**
+- [X] **Step 1: Write src/lib/types.ts**
 
 ```ts
 export type ToolId = 'claude' | 'cursor' | 'gemini' | 'codex' | 'github-copilot';
