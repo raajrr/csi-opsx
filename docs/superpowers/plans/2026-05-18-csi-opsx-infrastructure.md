@@ -181,7 +181,7 @@ export type CommandName = 'explore' | 'propose' | 'apply' | 'archive';
 export const COMMAND_NAMES: CommandName[] = ['explore', 'propose', 'apply', 'archive'];
 ```
 
-- [ ] **Step 2: Commit**
+- [X] **Step 2: Commit**
 
 ```bash
 git add src/lib/types.ts
@@ -195,7 +195,7 @@ git commit -m "feat: add shared ToolId and CommandName types"
 **Files:**
 - Create: `src/lib/tools.ts`
 
-- [ ] **Step 1: Write src/lib/tools.ts**
+- [X] **Step 1: Write src/lib/tools.ts**
 
 ```ts
 import type { ToolId } from './types.js';
