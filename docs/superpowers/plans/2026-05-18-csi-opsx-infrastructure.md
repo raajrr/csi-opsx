@@ -111,7 +111,7 @@ node_modules/
 }
 ```
 
-- [ ] **Step 4: Create tsup.config.ts**
+- [X] **Step 4: Create tsup.config.ts**
 
 ```ts
 import { defineConfig } from 'tsup';
