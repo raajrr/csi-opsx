@@ -1,4 +1,4 @@
-﻿{
+{
   "name": "csi-opsx",
   "version": "0.1.0",
   "description": "OpenSpec wrapper with grilling for explore phase and automated review loops for propose phase.",

@@ -1,4 +1,4 @@
-﻿import type { ToolId } from './types.js';
+import type { ToolId } from './types.js';
 
 export const TOOL_DIRS: Record<ToolId, string> = {
     'claude':         '.claude',

@@ -224,7 +224,7 @@ git commit -m "feat: add TOOL_DIRS mapping for agent directory detection"
 - Create: `src/lib/tool-detection.ts`
 - Create: `src/lib/__tests__/tool-detection.test.ts`
 
-- [ ] **Step 1: Write the failing tests**
+- [X] **Step 1: Write the failing tests**
 
 Create `src/lib/__tests__/tool-detection.test.ts`:
 
@@ -293,13 +293,13 @@ describe('tool-detection', () => {
 });
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [X] **Step 2: Run tests to verify they fail**
 
 Run: `npm test`
 
 Expected: FAIL — `Cannot find module '../tool-detection.js'`
 
-- [ ] **Step 3: Implement src/lib/tool-detection.ts**
+- [X] **Step 3: Implement src/lib/tool-detection.ts**
 
 ```ts
 import { existsSync, readdirSync } from 'fs';
@@ -322,7 +322,7 @@ export function getConfiguredTools(projectRoot: string): ToolId[] {
 }
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [X] **Step 4: Run tests to verify they pass**
 
 Run: `npm test`
 
