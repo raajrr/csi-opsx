@@ -51,7 +51,7 @@
 - Create: `tsup.config.ts`
 - Create: `vitest.config.ts`
 
-- [ ] **Step 1: Create package.json**
+- [X] **Step 1: Create package.json**
 
 ```json
 {
@@ -82,7 +82,7 @@
 }
 ```
 
-- [ ] **Step 2: Create .gitignore**
+- [X] **Step 2: Create .gitignore**
 
 ```
 dist/
@@ -90,7 +90,7 @@ node_modules/
 *.tsbuildinfo
 ```
 
-- [ ] **Step 3: Create tsconfig.json**
+- [X] **Step 3: Create tsconfig.json**
 
 ```json
 {
