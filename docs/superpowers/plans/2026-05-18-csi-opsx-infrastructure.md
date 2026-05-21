@@ -493,7 +493,7 @@ export function getAdapter(toolId: ToolId): SkillAdapter | undefined {
 
 > Registry values and `getAdapter()`'s return are typed by the `SkillAdapter` interface, not the concrete `ClaudeAdapter`. Adding a new adapter only adds an import and a registry entry — no caller or signature changes.
 
-- [ ] **Step 2: Commit**
+- [X] **Step 2: Commit**
 
 ```bash
 git add src/lib/adapters/index.ts

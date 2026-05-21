@@ -168,7 +168,7 @@ No harness, no subprocess, no file access enforcement — purely conversational.
 ```mermaid
 flowchart TD
     A([Developer invokes /csi-opsx:propose]) --> B[Follow /opsx:propose behavior\nGenerate initial artifacts]
-    B --> C[Snapshot file mtimes before → after\nIdentify generated artifacts]
+    B --> C["Snapshot file mtimes before → after\nIdentify generated artifacts"]
     C --> D{Claude Code CLI\navailable?}
     D -- Yes --> E["csi-opsx run --command=propose\n--workspace . --artifacts list"]
     E --> F[Harness runs\nproposer/reviewer loop]
