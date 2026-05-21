@@ -342,7 +342,7 @@ git commit -m "feat: implement tool detection by scanning for openspec skill fil
 **Files:**
 - Create: `src/lib/adapters/types.ts`
 
-- [ ] **Step 1: Write src/lib/adapters/types.ts**
+- [X] **Step 1: Write src/lib/adapters/types.ts**
 
 ```ts
 import type { CommandName } from '../types.js';
@@ -354,7 +354,7 @@ export interface SkillAdapter {
 }
 ```
 
-- [ ] **Step 2: Commit**
+- [X] **Step 2: Commit**
 
 ```bash
 git add src/lib/adapters/types.ts
@@ -369,7 +369,7 @@ git commit -m "feat: add SkillAdapter interface for agent-specific installation"
 - Create: `src/lib/adapters/claude.ts`
 - Create: `src/lib/__tests__/adapters.test.ts`
 
-- [ ] **Step 1: Write failing tests**
+- [X] **Step 1: Write failing tests**
 
 Create `src/lib/__tests__/adapters.test.ts`:
 
@@ -418,13 +418,13 @@ describe('ClaudeAdapter', () => {
 });
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [X] **Step 2: Run tests to verify they fail**
 
 Run: `npm test`
 
 Expected: FAIL — `Cannot find module '../adapters/claude.js'`
 
-- [ ] **Step 3: Implement src/lib/adapters/claude.ts**
+- [X] **Step 3: Implement src/lib/adapters/claude.ts**
 
 ```ts
 import type { CommandName } from '../types.js';
@@ -449,7 +449,7 @@ export class ClaudeAdapter implements SkillAdapter {
 }
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [X] **Step 4: Run tests to verify they pass**
 
 Run: `npm test`
 
