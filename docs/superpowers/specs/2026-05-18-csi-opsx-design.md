@@ -76,7 +76,13 @@ csi-opsx/
       workspace.ts          ← temp dir creation, file copying, cleanup
       loop.ts               ← loop controller: reads findings, decides continue/exit
       permissions.ts        ← builds .claude/settings.json for each agent run
+    skills/
+      grill-with-docs/
+        SKILL.md            ← bundled third-party skill (static copy, attribution comment)
+        ADR-FORMAT.md       ← referenced by SKILL.md — must be co-located
+        CONTEXT-FORMAT.md   ← referenced by SKILL.md — must be co-located
   dist/                     ← compiled output (gitignored)
+    skills/                 ← third-party skill directories copied here by tsup onSuccess
 ```
 
 **Build scripts (`package.json`):**
@@ -95,7 +101,7 @@ csi-opsx/
 }
 ```
 
-`SKILL.md` files are markdown assets — `tsup` is configured to copy them into `dist/` alongside the compiled output so `csi-opsx init` can find them at runtime.
+`SKILL.md` files are markdown assets — `tsup` is configured to copy them into `dist/` alongside the compiled output so `csi-opsx init` can find them at runtime. The `onSuccess` hook also discovers all directories under `src/skills/` and copies each one wholesale to `dist/skills/`, preserving the directory structure so co-located support files (e.g. `ADR-FORMAT.md`) remain alongside their `SKILL.md`.
 
 ---
 
@@ -108,6 +114,7 @@ csi-opsx/
 3. For each detected agent:
    - Copies `commands/*/SKILL.md` → `{toolDir}/skills/csi-opsx-{name}/SKILL.md`
    - Generates command file via agent adapter → agent-specific command path
+   - Copies each `dist/skills/{name}/` directory → `{toolDir}/skills/{name}/` (third-party skills; all files preserved)
 4. Reports installed agents and skill paths
 
 ```mermaid
@@ -400,6 +407,7 @@ The command file is a thin entry point that references the skill behavior. The s
 | New harnessed command | Add `src/commands/{name}/SKILL.md`, `harness.ts`, `agents.ts`; wire `run --command={name}` |
 | New runner adapter | Add `src/lib/runner/{name}.ts`; add detection check in `src/lib/runner/index.ts` |
 | New agent for skill install | Add entry to `src/lib/tools.ts`; add adapter to `src/lib/adapters/` |
+| New third-party skill | Add `src/skills/{name}/` with all skill files and an attribution comment in `SKILL.md`; tsup and install pick it up automatically |
 
 ---
 

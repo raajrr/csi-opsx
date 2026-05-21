@@ -27,8 +27,12 @@
 | `src/lib/adapters/claude.ts` | Create | Claude Code adapter (skill path, command path, command format) |
 | `src/lib/adapters/index.ts` | Create | Adapter registry and `getAdapter()` lookup |
 | `src/lib/__tests__/adapters.test.ts` | Create | Unit tests for ClaudeAdapter |
-| `src/lib/install.ts` | Create | `installSkills()` and `installCommands()` |
+| `src/lib/install.ts` | Create | `installSkills()`, `installCommands()`, and `installThirdPartySkills()` |
 | `src/lib/__tests__/install.test.ts` | Create | Unit tests for install logic |
+| `src/skills/grill-with-docs/SKILL.md` | Create | Bundled grill-with-docs skill (static copy with attribution) |
+| `src/skills/grill-with-docs/ADR-FORMAT.md` | Create | ADR format reference — co-located with SKILL.md |
+| `src/skills/grill-with-docs/CONTEXT-FORMAT.md` | Create | CONTEXT.md format reference — co-located with SKILL.md |
+| `tsup.config.ts` | Modify | Add `src/skills/` → `dist/skills/` directory copy loop to `onSuccess` |
 | `src/bin/cli.ts` | Create | CLI entry: init, update, run subcommands |
 | `src/commands/propose/harness.ts` | Create | Stub — replaced in Plan 2 |
 | `src/commands/explore/SKILL.md` | Create | Explore + grill combined behavior (markdown asset) |
@@ -209,7 +213,7 @@ export const TOOL_DIRS: Record<ToolId, string> = {
 };
 ```
 
-- [ ] **Step 2: Commit**
+- [X] **Step 2: Commit**
 
 ```bash
 git add src/lib/tools.ts
@@ -455,7 +459,7 @@ Run: `npm test`
 
 Expected: PASS — all adapter tests pass.
 
-- [ ] **Step 5: Commit**
+- [X] **Step 5: Commit**
 
 ```bash
 git add src/lib/adapters/claude.ts src/lib/__tests__/adapters.test.ts
@@ -469,22 +473,25 @@ git commit -m "feat: add ClaudeAdapter for Claude Code skill and command install
 **Files:**
 - Create: `src/lib/adapters/index.ts`
 
-- [ ] **Step 1: Write src/lib/adapters/index.ts**
+- [X] **Step 1: Write src/lib/adapters/index.ts**
 
 ```ts
 import type { ToolId } from '../types.js';
+import type { SkillAdapter } from './types.js';
 import { ClaudeAdapter } from './claude.js';
 
-export type { SkillAdapter } from './types.js';
+export type { SkillAdapter };
 
-const ADAPTERS: Partial<Record<ToolId, InstanceType<typeof ClaudeAdapter>>> = {
+const ADAPTERS: Partial<Record<ToolId, SkillAdapter>> = {
   claude: new ClaudeAdapter(),
 };
 
-export function getAdapter(toolId: ToolId): InstanceType<typeof ClaudeAdapter> | undefined {
+export function getAdapter(toolId: ToolId): SkillAdapter | undefined {
   return ADAPTERS[toolId];
 }
 ```
+
+> Registry values and `getAdapter()`'s return are typed by the `SkillAdapter` interface, not the concrete `ClaudeAdapter`. Adding a new adapter only adds an import and a registry entry — no caller or signature changes.
 
 - [ ] **Step 2: Commit**
 
@@ -510,26 +517,30 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdirSync, rmSync, writeFileSync, existsSync, readFileSync } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
-import { installSkills, installCommands } from '../install.js';
+import { installSkills, installCommands, installThirdPartySkills } from '../install.js';
 
 describe('install', () => {
   let projectDir: string;
   let sourceDir: string;
+  let thirdPartyDir: string;
 
   beforeEach(() => {
     projectDir = join(tmpdir(), `csi-install-${Date.now()}`);
     sourceDir = join(tmpdir(), `csi-source-${Date.now()}`);
+    thirdPartyDir = join(tmpdir(), `csi-skills-${Date.now()}`);
     mkdirSync(join(sourceDir, 'explore'), { recursive: true });
     mkdirSync(join(sourceDir, 'propose'), { recursive: true });
     writeFileSync(join(sourceDir, 'explore', 'SKILL.md'), '# Explore Skill');
     writeFileSync(join(sourceDir, 'explore', 'command.md'), '# Explore Command');
     writeFileSync(join(sourceDir, 'propose', 'SKILL.md'), '# Propose Skill');
     mkdirSync(projectDir, { recursive: true });
+    mkdirSync(thirdPartyDir, { recursive: true });
   });
 
   afterEach(() => {
     rmSync(projectDir, { recursive: true, force: true });
     rmSync(sourceDir, { recursive: true, force: true });
+    rmSync(thirdPartyDir, { recursive: true, force: true });
   });
 
   describe('installSkills', () => {
@@ -565,6 +576,37 @@ describe('install', () => {
       expect(existsSync(join(projectDir, '.cursor', 'commands', 'csi-opsx', 'explore.md'))).toBe(false);
     });
   });
+
+  describe('installThirdPartySkills', () => {
+    it('copies all files from each skill directory to toolDir/skills/{name}/', () => {
+      mkdirSync(join(thirdPartyDir, 'grill-with-docs'), { recursive: true });
+      writeFileSync(join(thirdPartyDir, 'grill-with-docs', 'SKILL.md'), '# Grill');
+      writeFileSync(join(thirdPartyDir, 'grill-with-docs', 'ADR-FORMAT.md'), '# ADR');
+      writeFileSync(join(thirdPartyDir, 'grill-with-docs', 'CONTEXT-FORMAT.md'), '# Context');
+      installThirdPartySkills(projectDir, '.claude', thirdPartyDir);
+      const dest = join(projectDir, '.claude', 'skills', 'grill-with-docs');
+      expect(existsSync(join(dest, 'SKILL.md'))).toBe(true);
+      expect(existsSync(join(dest, 'ADR-FORMAT.md'))).toBe(true);
+      expect(existsSync(join(dest, 'CONTEXT-FORMAT.md'))).toBe(true);
+      expect(readFileSync(join(dest, 'SKILL.md'), 'utf8')).toBe('# Grill');
+    });
+
+    it('is a no-op when skillsSourceDir does not exist', () => {
+      expect(() =>
+        installThirdPartySkills(projectDir, '.claude', join(thirdPartyDir, 'nonexistent'))
+      ).not.toThrow();
+    });
+
+    it('installs multiple skill directories', () => {
+      mkdirSync(join(thirdPartyDir, 'skill-a'), { recursive: true });
+      mkdirSync(join(thirdPartyDir, 'skill-b'), { recursive: true });
+      writeFileSync(join(thirdPartyDir, 'skill-a', 'SKILL.md'), '# A');
+      writeFileSync(join(thirdPartyDir, 'skill-b', 'SKILL.md'), '# B');
+      installThirdPartySkills(projectDir, '.claude', thirdPartyDir);
+      expect(existsSync(join(projectDir, '.claude', 'skills', 'skill-a', 'SKILL.md'))).toBe(true);
+      expect(existsSync(join(projectDir, '.claude', 'skills', 'skill-b', 'SKILL.md'))).toBe(true);
+    });
+  });
 });
 ```
 
@@ -577,7 +619,7 @@ Expected: FAIL — `Cannot find module '../install.js'`
 - [ ] **Step 3: Implement src/lib/install.ts**
 
 ```ts
-import { mkdirSync, copyFileSync, writeFileSync, readFileSync, existsSync } from 'fs';
+import { mkdirSync, copyFileSync, writeFileSync, readFileSync, existsSync, readdirSync } from 'fs';
 import { join, dirname } from 'path';
 import type { CommandName, ToolId } from './types.js';
 import { getAdapter } from './adapters/index.js';
@@ -615,6 +657,22 @@ export function installCommands(
     writeFileSync(destPath, adapter.formatCommandFile(cmd, skillContent));
   }
 }
+
+export function installThirdPartySkills(
+  projectRoot: string,
+  toolDir: string,
+  skillsSourceDir: string
+): void {
+  if (!existsSync(skillsSourceDir)) return;
+  for (const skillName of readdirSync(skillsSourceDir)) {
+    const srcDir = join(skillsSourceDir, skillName);
+    const destDir = join(projectRoot, toolDir, 'skills', skillName);
+    mkdirSync(destDir, { recursive: true });
+    for (const file of readdirSync(srcDir)) {
+      copyFileSync(join(srcDir, file), join(destDir, file));
+    }
+  }
+}
 ```
 
 - [ ] **Step 4: Run tests to verify they pass**
@@ -627,7 +685,7 @@ Expected: PASS — all install tests pass.
 
 ```bash
 git add src/lib/install.ts src/lib/__tests__/install.test.ts
-git commit -m "feat: implement skill and command installation logic"
+git commit -m "feat: implement skill, command, and third-party skill installation logic"
 ```
 
 ---
@@ -664,10 +722,11 @@ import { fileURLToPath } from 'url';
 import { getConfiguredTools } from '../lib/tool-detection.js';
 import { COMMAND_NAMES } from '../lib/types.js';
 import { TOOL_DIRS } from '../lib/tools.js';
-import { installSkills, installCommands } from '../lib/install.js';
+import { installSkills, installCommands, installThirdPartySkills } from '../lib/install.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const COMMANDS_DIR = join(__dirname, '..', 'commands');
+const SKILLS_DIR = join(__dirname, '..', 'skills');
 
 const program = new Command();
 
@@ -725,6 +784,7 @@ function installCsiOpsx(): void {
     const toolDir = TOOL_DIRS[toolId];
     installSkills(process.cwd(), toolDir, COMMAND_NAMES, COMMANDS_DIR);
     installCommands(process.cwd(), toolId, toolDir, COMMAND_NAMES, COMMANDS_DIR);
+    installThirdPartySkills(process.cwd(), toolDir, SKILLS_DIR);
     console.log(`✓ Installed csi-opsx skills for ${toolId} (${toolDir})`);
   }
 }
@@ -921,6 +981,65 @@ Load and follow the skill at `csi-opsx-propose/SKILL.md` exactly.
 ```bash
 git add src/commands/propose/SKILL.md src/commands/propose/command.md
 git commit -m "feat: add propose skill with mtime snapshot and harness delegation"
+```
+
+---
+
+### Task 12b: Third-party skill content and tsup update
+
+**Files:**
+- Create: `src/skills/grill-with-docs/SKILL.md`
+- Create: `src/skills/grill-with-docs/ADR-FORMAT.md`
+- Create: `src/skills/grill-with-docs/CONTEXT-FORMAT.md`
+- Modify: `tsup.config.ts` — add `src/skills/` → `dist/skills/` copy loop
+
+- [ ] **Step 1: Create src/skills/grill-with-docs/ with attribution**
+
+Create `src/skills/grill-with-docs/SKILL.md` with the following attribution comment at the top, then paste the full skill content below it:
+
+```markdown
+<!-- Source: https://github.com/mattpocock/skills/tree/main/skills/engineering/grill-with-docs — Matt Pocock -->
+```
+
+Create `src/skills/grill-with-docs/ADR-FORMAT.md` and `src/skills/grill-with-docs/CONTEXT-FORMAT.md` with the same attribution comment at the top of each file.
+
+- [ ] **Step 2: Update tsup.config.ts to copy src/skills/ → dist/skills/**
+
+Add `readdirSync` to the existing import, then add the following loop inside `onSuccess` after the existing commands loop:
+
+```ts
+import { copyFileSync, mkdirSync, existsSync, readdirSync } from 'node:fs';
+```
+
+```ts
+// copy third-party skills: src/skills/<name>/ → dist/skills/<name>/
+const skillsSrc = join('src', 'skills');
+if (existsSync(skillsSrc)) {
+  for (const skillName of readdirSync(skillsSrc)) {
+    const srcDir = join(skillsSrc, skillName);
+    const destDir = join('dist', 'skills', skillName);
+    mkdirSync(destDir, { recursive: true });
+    for (const file of readdirSync(srcDir)) {
+      copyFileSync(join(srcDir, file), join(destDir, file));
+    }
+  }
+}
+```
+
+- [ ] **Step 3: Run build to verify**
+
+Run: `npm run build`
+
+Expected:
+- `dist/skills/grill-with-docs/SKILL.md` exists
+- `dist/skills/grill-with-docs/ADR-FORMAT.md` exists
+- `dist/skills/grill-with-docs/CONTEXT-FORMAT.md` exists
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add src/skills/ tsup.config.ts
+git commit -m "feat: add grill-with-docs third-party skill and generic skills copy in tsup"
 ```
 
 ---
