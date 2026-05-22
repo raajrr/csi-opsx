@@ -1,4 +1,4 @@
-import { mkdirSync, copyFileSync, writeFileSync, readFileSync, existsSync, readdirSync } from 'fs';
+import { mkdirSync, copyFileSync, writeFileSync, readFileSync, existsSync, readdirSync, statSync } from 'fs';
 import { join, dirname } from 'path';
 import type { CommandName, ToolId } from './types.js';
 import { getAdapter } from './adapters/index.js';
@@ -32,7 +32,7 @@ export function installCommands(projectRoot: string,
 
     for (const cmd of commands){
         const skillSrc = join(sourceDir, cmd, SKILL_MD);
-        // If SKILL.md exists, read the content, else return empty string
+        // If SKILL.md exists, read the content, else use empty string as fallback
         const skillContent = existsSync(skillSrc) ? readFileSync(skillSrc, 'utf8') : '';
         // The location to copy the command to
         const destPath = join(projectRoot, adapter.getCommandPath(toolDir, cmd));
@@ -45,14 +45,18 @@ export function installThirdPartySkills(projectRoot: string,
                                         toolDir: string,
                                         skillsSourceDir: string):void{
     if(!existsSync(skillsSourceDir)){ return; }
-    for (const skillName of  readdirSync(skillsSourceDir)){
-        // eg: /dest/skills/grill-with-docs
+    for (const skillName of readdirSync(skillsSourceDir)){
+        // eg: /dist/skills/grill-with-docs
         const srcDir = join(skillsSourceDir, skillName);
         // eg: <project-root>/.claude/skills/grill-with-docs
         const destDir = join(projectRoot, toolDir, SKILLS_SUBDIR, skillName);
         mkdirSync(destDir, { recursive: true });
         for(const file of readdirSync(srcDir)){
-            copyFileSync(join(srcDir, file), join(destDir, file));
+            const srcFile = join(srcDir, file);
+            // Only copy the srcFile if it is a file. Guarding against subdirectories.
+            if(statSync(srcFile).isFile()){
+                copyFileSync(join(srcDir, file), join(destDir, file));
+            }
         }
     }
 }

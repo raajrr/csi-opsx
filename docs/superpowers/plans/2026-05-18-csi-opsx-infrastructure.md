@@ -578,6 +578,12 @@ describe('install', () => {
       installCommands(projectDir, 'cursor', '.cursor', ['explore'], sourceDir);
       expect(existsSync(join(projectDir, '.cursor', 'commands', 'csi-opsx', 'explore.md'))).toBe(false);
     });
+
+    it('still writes command file when SKILL.md is absent in source', () => {
+      installCommands(projectDir, 'claude', '.claude', ['apply'], sourceDir);
+      const dest = join(projectDir, '.claude', 'commands', 'csi-opsx', 'apply.md');
+      expect(existsSync(dest)).toBe(true);
+    });
   });
 
   describe('installThirdPartySkills', () => {
@@ -619,72 +625,73 @@ Run: `npm test`
 
 Expected: FAIL — `Cannot find module '../install.js'`
 
-- [ ] **Step 3: Implement src/lib/install.ts**
+- [X] **Step 3: Implement src/lib/install.ts**
 
 ```ts
-import { mkdirSync, copyFileSync, writeFileSync, readFileSync, existsSync, readdirSync } from 'fs';
+import { mkdirSync, copyFileSync, writeFileSync, readFileSync, existsSync, readdirSync, statSync } from 'fs';
 import { join, dirname } from 'path';
 import type { CommandName, ToolId } from './types.js';
 import { getAdapter } from './adapters/index.js';
 
-export function installSkills(
-  projectRoot: string,
-  toolDir: string,
-  commands: CommandName[],
-  sourceDir: string
-): void {
-  for (const cmd of commands) {
-    const src = join(sourceDir, cmd, 'SKILL.md');
-    if (!existsSync(src)) continue;
-    const dest = join(projectRoot, toolDir, 'skills', `csi-opsx-${cmd}`, 'SKILL.md');
-    mkdirSync(dirname(dest), { recursive: true });
-    copyFileSync(src, dest);
-  }
-}
+const SKILL_MD = 'SKILL.md';
+const SKILLS_SUBDIR = 'skills';
 
-export function installCommands(
-  projectRoot: string,
-  toolId: ToolId,
-  toolDir: string,
-  commands: CommandName[],
-  sourceDir: string
-): void {
-  const adapter = getAdapter(toolId);
-  if (!adapter) return;
-
-  for (const cmd of commands) {
-    const skillSrc = join(sourceDir, cmd, 'SKILL.md');
-    const skillContent = existsSync(skillSrc) ? readFileSync(skillSrc, 'utf8') : '';
-    const destPath = join(projectRoot, adapter.getCommandPath(toolDir, cmd));
-    mkdirSync(dirname(destPath), { recursive: true });
-    writeFileSync(destPath, adapter.formatCommandFile(cmd, skillContent));
-  }
-}
-
-export function installThirdPartySkills(
-  projectRoot: string,
-  toolDir: string,
-  skillsSourceDir: string
-): void {
-  if (!existsSync(skillsSourceDir)) return;
-  for (const skillName of readdirSync(skillsSourceDir)) {
-    const srcDir = join(skillsSourceDir, skillName);
-    const destDir = join(projectRoot, toolDir, 'skills', skillName);
-    mkdirSync(destDir, { recursive: true });
-    for (const file of readdirSync(srcDir)) {
-      copyFileSync(join(srcDir, file), join(destDir, file));
+export function installSkills(projectRoot: string,
+                              toolDir: string,
+                              commands: CommandName[],
+                              sourceDir: string): void {
+    for (const cmd of commands) {
+        const skillSrc = join(sourceDir, cmd, SKILL_MD);
+        if (existsSync(skillSrc)) {
+            const dest = join(projectRoot, toolDir, SKILLS_SUBDIR, `csi-opsx-${cmd}`, SKILL_MD);
+            mkdirSync(dirname(dest), { recursive: true });
+            copyFileSync(skillSrc, dest);
+        }
     }
-  }
+}
+
+export function installCommands(projectRoot: string,
+                                toolId: ToolId,
+                                toolDir: string,
+                                commands: CommandName[],
+                                sourceDir: string): void {
+    const adapter = getAdapter(toolId);
+    if (!adapter) { return; }
+
+    for (const cmd of commands) {
+        const skillSrc = join(sourceDir, cmd, SKILL_MD);
+        const skillContent = existsSync(skillSrc) ? readFileSync(skillSrc, 'utf8') : '';
+        const destPath = join(projectRoot, adapter.getCommandPath(toolDir, cmd));
+        mkdirSync(dirname(destPath), { recursive: true });
+        writeFileSync(destPath, adapter.formatCommandFile(cmd, skillContent));
+    }
+}
+
+export function installThirdPartySkills(projectRoot: string,
+                                        toolDir: string,
+                                        skillsSourceDir: string): void {
+    if (!existsSync(skillsSourceDir)) { return; }
+    for (const skillName of readdirSync(skillsSourceDir)) {
+        const srcDir = join(skillsSourceDir, skillName);
+        const destDir = join(projectRoot, toolDir, SKILLS_SUBDIR, skillName);
+        mkdirSync(destDir, { recursive: true });
+        for (const file of readdirSync(srcDir)) {
+            const srcFile = join(srcDir, file);
+            if (statSync(srcFile).isFile()) {
+                copyFileSync(srcFile, join(destDir, file));
+            }
+        }
+    }
 }
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [X] **Step 4: Run tests to verify they pass**
 
 Run: `npm test`
 
 Expected: PASS — all install tests pass.
 
-- [ ] **Step 5: Commit**
+- [X] **Step 5: Commit**
 
 ```bash
 git add src/lib/install.ts src/lib/__tests__/install.test.ts

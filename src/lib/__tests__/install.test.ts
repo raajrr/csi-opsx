@@ -84,7 +84,7 @@ describe('install', () => {
     describe('installCommands', () => {
         it('writes command file to toolDir/commands/csi-opsx/{name}.md for claude', () => {
             // Call installCommands with a project directory for Claude to install one command,
-            // i.e. explore, and the source directory, i.e directory where the command is in
+            // i.e. explore, and the source directory, i.e. directory where the command is in
             // csi-opsx package, and with tool id claude.
             installCommands(projectDir, 'claude', '.claude', ['explore'], sourceDir);
             // Path of the file that the installCommands function should create for the explore
@@ -99,13 +99,19 @@ describe('install', () => {
 
         it('skips tool IDs with no registered adapter', () => {
             // Call installCommands with a project directory for Cursor to install one command,
-            // i.e. explore, and the source directory, i.e directory where the command is in
+            // i.e. explore, and the source directory, i.e. directory where the command is in
             // csi-opsx package, and with tool id cursor.
             installCommands(projectDir, 'cursor', '.cursor', ['explore'], sourceDir);
             // Since as of the writing of this test cursor doesn't have a registered adapter in this app
             // installCommands shouldn't create a directory to copy the commands over for this tool.
             expect(existsSync(join(projectDir, '.cursor', 'commands', 'csi-opsx', 'explore.md'))).toBe(false);
         });
+
+        it('still writes command file when SKILL.md is absent in source', () => {
+                installCommands(projectDir, 'claude', '.claude', ['apply'], sourceDir);
+                const dest = join(projectDir, '.claude', 'commands', 'csi-opsx', 'apply.md');
+                expect(existsSync(dest)).toBe(true);
+            });
     });
 
     describe('installThirdPartySkills', () => {
