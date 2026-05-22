@@ -53,23 +53,23 @@ csi-opsx/
     commands/
       explore/
         SKILL.md            ← behavioral instructions (agent-neutral, asset not compiled)
-        command.md          ← slash command entry point template (thin, references skill)
       propose/
         SKILL.md            ← behavioral instructions (agent-neutral, asset not compiled)
-        command.md          ← slash command entry point template
         agents.ts           ← ProposerAgent + ReviewerAgent configs
         harness.ts          ← proposer→reviewer loop orchestration
       apply/
         SKILL.md            ← behavioral instructions (asset, not compiled)
-        command.md          ← slash command entry point template
       archive/
         SKILL.md            ← behavioral instructions (asset, not compiled)
-        command.md          ← slash command entry point template
     lib/
+      types.ts              ← ToolId + CommandName union types
       tools.ts              ← tool-id → skillsDir mapping (mirrors OpenSpec AI_TOOLS)
       tool-detection.ts     ← detects which agents are configured via OpenSpec skill files
       adapters/
+        types.ts            ← SkillAdapter interface
         claude.ts           ← command file path + format for Claude Code
+        index.ts            ← adapter registry + getAdapter() lookup
+      install.ts            ← installSkills / installCommands / installThirdPartySkills
       runner/
         index.ts            ← resolveRunner(): detects available runner
         claude-cli.ts       ← ClaudeCliRunner: spawns claude -p subprocess
@@ -125,7 +125,8 @@ flowchart TD
     D --> E{For each\ndetected agent}
     E --> F["Copy commands/*/SKILL.md\n→ toolDir/skills/csi-opsx-name/SKILL.md"]
     F --> G[Generate command file\nvia agent adapter]
-    G --> H{More\nagents?}
+    G --> J["Install third-party skills\ndist/skills/* → toolDir/skills/name/"]
+    J --> H{More\nagents?}
     H -- Yes --> E
     H -- No --> I([Report installed agents\nand skill paths])
 ```
