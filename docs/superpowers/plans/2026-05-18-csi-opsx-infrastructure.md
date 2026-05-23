@@ -899,7 +899,7 @@ Follow `/opsx:apply` behavior exactly.
 Follow `/opsx:archive` behavior exactly.
 ```
 
-- [ ] **Step 3: Commit**
+- [X] **Step 3: Commit**
 
 ```bash
 git add src/commands/apply/ src/commands/archive/
@@ -918,12 +918,12 @@ git commit -m "feat: add apply and archive passthrough skills"
 ````markdown
 # csi-opsx Propose
 
-## Step 1: Snapshot file modification times
+## Step 1: Snapshot git status
 
-Before running the propose step, record the modification time of every file in the project:
+Before running the propose step, record the current git status:
 
 ```bash
-find . -not -path './.git/*' -type f -printf '%T@ %p\n' 2>/dev/null | sort
+git status --porcelain
 ```
 
 Store this output for comparison in Step 3.
@@ -934,13 +934,13 @@ Follow `/opsx:propose` behavior exactly to generate initial artifacts (proposal.
 
 ## Step 3: Identify generated artifacts
 
-After the propose step completes, snapshot modification times again:
+After the propose step completes, snapshot git status again:
 
 ```bash
-find . -not -path './.git/*' -type f -printf '%T@ %p\n' 2>/dev/null | sort
+git status --porcelain
 ```
 
-Compare against Step 1. Files whose mtime changed or that are new are the generated artifacts. Collect these as a comma-separated list of paths relative to the project root (e.g. `proposal.md,design.md,tasks.md,openspec/specs/auth.md`).
+Compare against Step 1. Lines that appear in the second snapshot but not the first are the generated artifacts. Collect the filenames from those lines as a comma-separated list of paths relative to the project root (e.g. `proposal.md,design.md,tasks.md,openspec/specs/auth.md`).
 
 ## Step 4: Check for Claude Code CLI
 
@@ -976,7 +976,7 @@ Wait for the harness to complete. Surface the exit summary to the session.
 
 ```bash
 git add src/commands/propose/SKILL.md
-git commit -m "feat: add propose skill with mtime snapshot and harness delegation"
+git commit -m "feat: add propose skill with git status snapshot and harness delegation"
 ```
 
 ---
