@@ -724,7 +724,7 @@ export async function runProposeHarness(_opts: HarnessOptions): Promise<void> {
 }
 ```
 
-- [ ] **Step 2: Create src/bin/cli.ts**
+- [X] **Step 2: Create src/bin/cli.ts**
 
 ```ts
 #!/usr/bin/env node
@@ -812,13 +812,13 @@ function installCsiOpsx(): void {
 }
 ```
 
-- [ ] **Step 3: Run typecheck**
+- [X] **Step 3: Run typecheck**
 
 Run: `npm run typecheck`
 
 Expected: no TypeScript errors.
 
-- [ ] **Step 4: Commit**
+- [X] **Step 4: Commit**
 
 ```bash
 git add src/bin/cli.ts src/commands/propose/harness.ts
@@ -832,7 +832,7 @@ git commit -m "feat: add CLI entry point with init/update/run subcommands and ha
 **Files:**
 - Create: `src/commands/explore/SKILL.md`
 
-- [ ] **Step 1: Write src/commands/explore/SKILL.md**
+- [X] **Step 1: Write src/commands/explore/SKILL.md**
 
 ```markdown
 # csi-opsx Explore
@@ -845,17 +845,19 @@ Follow `/opsx:explore` behavior: conduct an investigative conversation. Do not m
 
 ## Grill Behavior (active simultaneously)
 
-Throughout the session:
+Load and follow the `grill-with-docs` skill for grilling behavior. If it is not installed, apply the fallback behaviors described below.
 
-- Challenge terminology against the existing glossary in `CONTEXT.md`. When divergence is detected, propose a canonical term and ask the user to confirm it.
+**Fallback grilling behaviors:**
+
+- Challenge terminology against the existing glossary in `CONTEXT.md` at the project root. When divergence is detected, propose a canonical term and ask the user to confirm it.
 - Stress-test the plan with concrete scenarios: "What happens when X and Y occur simultaneously?" "What does this look like at 10× current scale?"
 - Cross-reference stated behavior against actual code — if a claim about how the system behaves does not match what the code does, surface that contradiction explicitly.
-- Update `CONTEXT.md` inline as decisions crystallise.
+- Update `CONTEXT.md` at the project root inline as decisions crystallise.
 - Create ADRs under `docs/adr/` only for decisions that are: hard to reverse, surprising without context, and involve genuine trade-offs.
 
 ## Outputs
 
-- `CONTEXT.md` updated inline as the session progresses
+- `CONTEXT.md` at the project root updated inline as the session progresses
 - ADRs created only where all three ADR criteria are met
 - No other artifacts produced or committed during explore
 
