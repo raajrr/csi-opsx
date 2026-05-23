@@ -104,12 +104,15 @@ node_modules/
     "esModuleInterop": true,
     "skipLibCheck": true,
     "declaration": true,
-    "declarationDir": "dist"
+    "declarationDir": "dist",
+    "resolveJsonModule": true
   },
   "include": ["src/**/*"],
   "exclude": ["dist", "node_modules"]
 }
 ```
+
+> **Note — revised in Task 9.** `"resolveJsonModule": true` was added to allow importing `package.json` in `cli.ts` so the version stays in sync and isn't hardcoded in two places.
 
 - [X] **Step 4: Create tsup.config.ts**
 
@@ -706,7 +709,7 @@ git commit -m "feat: implement skill, command, and third-party skill installatio
 - Create: `src/commands/propose/harness.ts`
 - Create: `src/bin/cli.ts`
 
-- [ ] **Step 1: Create the harness stub**
+- [X] **Step 1: Create the harness stub**
 
 Create `src/commands/propose/harness.ts`:
 
@@ -729,6 +732,7 @@ import { Command } from 'commander';
 import { spawnSync } from 'child_process';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
+import pkg from '../../package.json' with { type: 'json' };
 import { getConfiguredTools } from '../lib/tool-detection.js';
 import { COMMAND_NAMES } from '../lib/types.js';
 import { TOOL_DIRS } from '../lib/tools.js';
@@ -743,7 +747,7 @@ const program = new Command();
 program
   .name('csi-opsx')
   .description('OpenSpec wrapper with automated review loops')
-  .version('0.1.0');
+  .version(pkg.version);
 
 program
   .command('init')
@@ -763,6 +767,15 @@ program
     installCsiOpsx();
   });
 
+type HarnessRunner = (opts: { workspace: string; artifacts: string[] }) => Promise<void>;
+
+const HARNESS_RUNNERS: Partial<Record<CommandName, HarnessRunner>> = {
+  propose: async (opts) => {
+    const { runProposeHarness } = await import('../commands/propose/harness.js');
+    await runProposeHarness(opts);
+  },
+};
+
 program
   .command('run')
   .description('Internal: run a harnessed command (called by skills via Bash)')
@@ -770,16 +783,15 @@ program
   .requiredOption('--workspace <path>', 'project workspace path')
   .requiredOption('--artifacts <csv>', 'comma-separated artifact relative paths')
   .action(async (opts) => {
-    if (opts.command === 'propose') {
-      const { runProposeHarness } = await import('../commands/propose/harness.js');
-      await runProposeHarness({
-        workspace: opts.workspace,
-        artifacts: (opts.artifacts as string).split(',').map((a) => a.trim()),
-      });
-    } else {
+    const runner = HARNESS_RUNNERS[opts.command as CommandName];
+    if (!runner) {
       console.error(`Unknown command: ${opts.command}`);
       process.exit(1);
     }
+    await runner({
+      workspace: opts.workspace,
+      artifacts: (opts.artifacts as string).split(',').map((a) => a.trim()),
+    });
   });
 
 program.parse();
