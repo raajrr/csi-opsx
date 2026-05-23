@@ -868,7 +868,7 @@ When the user signals the session is wrapping up, surface:
 > "Ready to proceed? Run `/csi-opsx:propose` to formalise these decisions into OpenSpec artifacts."
 ```
 
-- [ ] **Step 2: Commit**
+- [X] **Step 2: Commit**
 
 ```bash
 git add src/commands/explore/SKILL.md
@@ -883,20 +883,20 @@ git commit -m "feat: add explore skill combining opsx:explore and grill-with-doc
 - Create: `src/commands/apply/SKILL.md`
 - Create: `src/commands/archive/SKILL.md`
 
-- [ ] **Step 1: Write src/commands/apply/SKILL.md**
+- [X] **Step 1: Write src/commands/apply/SKILL.md**
 
 ```markdown
 # csi-opsx Apply
 
-Follow `/opsx:apply` behavior exactly. No additional behavior in this iteration.
+Follow `/opsx:apply` behavior exactly.
 ```
 
-- [ ] **Step 2: Write src/commands/archive/SKILL.md**
+- [X] **Step 2: Write src/commands/archive/SKILL.md**
 
 ```markdown
 # csi-opsx Archive
 
-Follow `/opsx:archive` behavior exactly. No additional behavior in this iteration.
+Follow `/opsx:archive` behavior exactly.
 ```
 
 - [ ] **Step 3: Commit**
