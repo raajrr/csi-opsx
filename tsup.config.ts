@@ -5,7 +5,7 @@ import { join } from 'path';
 const COMMANDS = ['explore', 'propose', 'apply', 'archive'] as const;
 
 export default defineConfig({
-    entry: ['src/bin/cli.ts'],
+    entry: { 'bin/cli': 'src/bin/cli.ts'},
     format: ['esm'],
     dts: true,
     clean: true,

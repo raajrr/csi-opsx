@@ -1086,7 +1086,7 @@ Expected:
 - `dist/skills/grill-with-docs/ADR-FORMAT.md` exists
 - `dist/skills/grill-with-docs/CONTEXT-FORMAT.md` exists
 
-- [ ] **Step 4: Commit**
+- [X] **Step 4: Commit**
 
 ```bash
 git add src/skills/ tsup.config.ts
@@ -1099,7 +1099,7 @@ git commit -m "feat: add grill-with-docs third-party skill and generic skills co
 
 **Files:** No new files.
 
-- [ ] **Step 1: Run typecheck**
+- [X] **Step 1: Run typecheck**
 
 Run: `npm run typecheck`
 
