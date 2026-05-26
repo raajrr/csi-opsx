@@ -1105,13 +1105,13 @@ Run: `npm run typecheck`
 
 Expected: no errors.
 
-- [ ] **Step 2: Run all tests**
+- [X] **Step 2: Run all tests**
 
 Run: `npm test`
 
 Expected: PASS — tool-detection (7), adapters (6), install (8) tests all pass.
 
-- [ ] **Step 3: Build**
+- [X] **Step 3: Build**
 
 Run: `npm run build`
 
@@ -1125,7 +1125,7 @@ Expected:
 - `dist/skills/grill-with-docs/ADR-FORMAT.md` exists
 - `dist/skills/grill-with-docs/CONTEXT-FORMAT.md` exists
 
-- [ ] **Step 4: Smoke test the CLI**
+- [X] **Step 4: Smoke test the CLI**
 
 Run: `node dist/bin/cli.js --help`
 
@@ -1137,7 +1137,7 @@ Commands:
   run [options]
 ```
 
-- [ ] **Step 5: Commit**
+- [X] **Step 5: Commit**
 
 ```bash
 git add -A
