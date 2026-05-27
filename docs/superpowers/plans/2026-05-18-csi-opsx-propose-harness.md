@@ -37,7 +37,7 @@
 **Files:**
 - Create: `src/lib/runner/types.ts`
 
-- [ ] **Step 1: Write src/lib/runner/types.ts**
+- [X] **Step 1: Write src/lib/runner/types.ts**
 
 ```ts
 export interface RunnerResult {
@@ -52,7 +52,7 @@ export interface Runner {
 }
 ```
 
-- [ ] **Step 2: Commit**
+- [X] **Step 2: Commit**
 
 ```bash
 git add src/lib/runner/types.ts
@@ -67,7 +67,7 @@ git commit -m "feat: add Runner interface and RunnerResult type"
 - Create: `src/lib/runner/claude-cli.ts`
 - Create: `src/lib/runner/__tests__/claude-cli.test.ts`
 
-- [ ] **Step 1: Write failing tests**
+- [X] **Step 1: Write failing tests**
 
 Create `src/lib/runner/__tests__/claude-cli.test.ts`:
 
@@ -108,22 +108,26 @@ describe('ClaudeCliRunner', () => {
       vi.mocked(spawnSync).mockReturnValue({
         status: 0, stdout: '', stderr: '',
       } as ReturnType<typeof spawnSync>);
+      const TEST_PROMPT = 'test prompt';
+      const TMP_WORKSPACE = '/tmp/workspace';
       const runner = new ClaudeCliRunner();
-      await runner.run('test prompt', '/tmp/workspace');
+      await runner.run(TEST_PROMPT, TMP_WORKSPACE);
       expect(spawnSync).toHaveBeenCalledWith(
         'claude',
-        ['-p', 'test prompt', '--allowedTools', 'Read,Write'],
-        expect.objectContaining({ cwd: '/tmp/workspace' })
+        ['-p', TEST_PROMPT, '--allowedTools', 'Read,Write'],
+        expect.objectContaining({ cwd: TMP_WORKSPACE })
       );
     });
 
     it('returns exitCode 0 on success', async () => {
+      const EXIT_CODE = 0;
+      const OUTPUT = 'output';
       vi.mocked(spawnSync).mockReturnValue({
-        status: 0, stdout: 'output', stderr: '',
+        status: EXIT_CODE, stdout: OUTPUT, stderr: '',
       } as ReturnType<typeof spawnSync>);
-      const result = await new ClaudeCliRunner().run('prompt', '/tmp/ws');
-      expect(result.exitCode).toBe(0);
-      expect(result.stdout).toBe('output');
+      const result = await new ClaudeCliRunner().run('prompt', 'tmp/ws');
+      expect(result.exitCode).toBe(EXIT_CODE);
+      expect(result.stdout).toBe(OUTPUT);
     });
 
     it('returns exitCode 1 when status is null', async () => {
@@ -137,13 +141,13 @@ describe('ClaudeCliRunner', () => {
 });
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [X] **Step 2: Run tests to verify they fail**
 
 Run: `npm test`
 
 Expected: FAIL — `Cannot find module '../claude-cli.js'`
 
-- [ ] **Step 3: Implement src/lib/runner/claude-cli.ts**
+- [X] **Step 3: Implement src/lib/runner/claude-cli.ts**
 
 ```ts
 import { spawnSync } from 'child_process';
@@ -180,13 +184,13 @@ export class ClaudeCliRunner implements Runner {
 }
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [X] **Step 4: Run tests to verify they pass**
 
 Run: `npm test`
 
 Expected: PASS — all 6 ClaudeCliRunner tests pass.
 
-- [ ] **Step 5: Commit**
+- [X] **Step 5: Commit**
 
 ```bash
 git add src/lib/runner/claude-cli.ts src/lib/runner/__tests__/claude-cli.test.ts
