@@ -265,33 +265,33 @@ describe('workspace', () => {
     it('creates a temp directory', () => {
       const ws = createWorkspace('reviewer', 1, projectDir, ['proposal.md']);
       expect(existsSync(ws.dir)).toBe(true);
-      cleanupWorkspace(ws.dir);
+      rmSync(ws.dir, { recursive: true, force: true });
     });
 
     it('copies flat files into the workspace root', () => {
       const ws = createWorkspace('reviewer', 1, projectDir, ['proposal.md', 'design.md']);
       expect(readFileSync(join(ws.dir, 'proposal.md'), 'utf8')).toBe('# Proposal');
       expect(readFileSync(join(ws.dir, 'design.md'), 'utf8')).toBe('# Design');
-      cleanupWorkspace(ws.dir);
+      rmSync(ws.dir, { recursive: true, force: true });
     });
 
     it('preserves subdirectory structure for nested paths', () => {
       const ws = createWorkspace('reviewer', 1, projectDir, ['openspec/specs/auth.md']);
       expect(existsSync(join(ws.dir, 'openspec', 'specs', 'auth.md'))).toBe(true);
-      cleanupWorkspace(ws.dir);
+      rmSync(ws.dir, { recursive: true, force: true });
     });
 
     it('skips files that do not exist in the project', () => {
       const ws = createWorkspace('reviewer', 1, projectDir, ['nonexistent.md']);
       expect(existsSync(join(ws.dir, 'nonexistent.md'))).toBe(false);
-      cleanupWorkspace(ws.dir);
+      rmSync(ws.dir, { recursive: true, force: true });
     });
 
     it('dir name contains the role and round', () => {
       const ws = createWorkspace('proposer', 3, projectDir, []);
       expect(ws.dir).toContain('proposer');
       expect(ws.dir).toContain('3');
-      cleanupWorkspace(ws.dir);
+      rmSync(ws.dir, { recursive: true, force: true });
     });
   });
 
@@ -301,7 +301,7 @@ describe('workspace', () => {
       writeFileSync(join(ws.dir, 'review-findings-1.md'), '---\nissues-found: 2\n---');
       copyBack(ws.dir, projectDir, ['review-findings-1.md']);
       expect(readFileSync(join(projectDir, 'review-findings-1.md'), 'utf8')).toContain('issues-found: 2');
-      cleanupWorkspace(ws.dir);
+      rmSync(ws.dir, { recursive: true, force: true });
     });
 
     it('preserves subdirectory structure when copying back', () => {
@@ -309,7 +309,17 @@ describe('workspace', () => {
       writeFileSync(join(ws.dir, 'openspec', 'specs', 'auth.md'), '# Updated Auth');
       copyBack(ws.dir, projectDir, ['openspec/specs/auth.md']);
       expect(readFileSync(join(projectDir, 'openspec', 'specs', 'auth.md'), 'utf8')).toBe('# Updated Auth');
-      cleanupWorkspace(ws.dir);
+      rmSync(ws.dir, { recursive: true, force: true });
+    });
+
+    it('copies multiple files with mixed paths back to the project', () => {
+      const ws = createWorkspace('proposer', 1, projectDir, ['proposal.md', 'openspec/specs/auth.md']);
+      writeFileSync(join(ws.dir, 'proposal.md'), '# Updated Proposal');
+      writeFileSync(join(ws.dir, 'openspec', 'specs', 'auth.md'), '# Updated Auth');
+      copyBack(ws.dir, projectDir, ['proposal.md', 'openspec/specs/auth.md']);
+      expect(readFileSync(join(projectDir, 'proposal.md'), 'utf8')).toBe('# Updated Proposal');
+      expect(readFileSync(join(projectDir, 'openspec', 'specs', 'auth.md'), 'utf8')).toBe('# Updated Auth');
+      rmSync(ws.dir, { recursive: true, force: true });
     });
   });
 
@@ -385,7 +395,7 @@ export function cleanupWorkspace(workspaceDir: string): void {
 
 Run: `npm test`
 
-Expected: PASS — all 9 workspace tests pass.
+Expected: PASS — all 10 workspace tests pass.
 
 - [ ] **Step 5: Commit**
 
