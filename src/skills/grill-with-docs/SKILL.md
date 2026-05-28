@@ -1,5 +1,3 @@
-<!-- Source: https://github.com/mattpocock/skills/blob/main/skills/engineering/grill-with-docs/SKILL.md 
-— Matt Pocock -->
 ---
 name: grill-with-docs
 description: Grilling session that challenges your plan against the existing domain model, sharpens terminology, and updates documentation (CONTEXT.md, ADRs) inline as decisions crystallise. Use when user wants to stress-test a plan against their project's language and documented decisions.
@@ -88,3 +86,5 @@ Only offer to create an ADR when all three are true:
 If any of the three is missing, skip the ADR. Use the format in [ADR-FORMAT.md](./ADR-FORMAT.md).
 
 </supporting-info>
+
+*Source: [Matt Pocock / grill-with-docs](https://github.com/mattpocock/skills/tree/main/skills/engineering/grill-with-docs)*

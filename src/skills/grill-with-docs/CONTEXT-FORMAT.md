@@ -1,6 +1,4 @@
-<!-- Source: https://github.com/mattpocock/skills/blob/main/skills/engineering/grill-with-docs/CONTEXT-FORMAT.md
-— Matt Pocock -->
-
+*Source: [Matt Pocock / grill-with-docs](https://github.com/mattpocock/skills/tree/main/skills/engineering/grill-with-docs)*
 # CONTEXT.md Format
 
 ## Structure
