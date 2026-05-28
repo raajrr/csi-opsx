@@ -71,11 +71,13 @@ csi-opsx/
         index.ts            ← adapter registry + getAdapter() lookup
       install.ts            ← installSkills / installCommands / installThirdPartySkills
       runner/
+        types.ts            ← Runner interface, RunnerOptions, RunnerResult
         index.ts            ← resolveRunner(): detects available runner
-        claude-cli.ts       ← ClaudeCliRunner: spawns claude -p subprocess
+        claude/
+          cli.ts            ← ClaudeCliRunner: spawns claude -p; calls writePermissions internally
+          permissions.ts    ← Claude-specific: builds .claude/settings.json from writablePaths
       workspace.ts          ← temp dir creation, file copying, cleanup
       loop.ts               ← loop controller: reads findings, decides continue/exit
-      permissions.ts        ← builds .claude/settings.json for each agent run
     skills/
       grill-with-docs/
         SKILL.md            ← bundled third-party skill (static copy, attribution comment)
@@ -276,19 +278,29 @@ Each agent run gets a temp directory containing only the files it needs to write
 
 ### File Access Enforcement
 
-Enforcement is via `.claude/settings.json` written into each temp workspace. Claude Code uses the working directory's settings file, so running `claude -p` with `cwd` pointing to the temp workspace applies the restrictive permissions without touching the project's settings.
+File access enforcement is a runner-specific concern, not a harness concern. The harness specifies *what* it wants writable via `RunnerOptions.writablePaths` and lets each runner implement *how* to sandbox itself.
 
-**Reviewer settings:**
-```json
-{ "permissions": { "allow": ["Write(review-findings-N.md)"], "deny": ["Write(*)" ] } }
+For `ClaudeCliRunner`, sandboxing happens via `.claude/settings.json` written into the temp workspace by `writePermissions()` (a private helper at `src/lib/runner/claude/permissions.ts`). `ClaudeCliRunner.run()` calls `writePermissions` before spawning `claude -p` whenever `writablePaths` is present. Claude Code reads the working directory's settings file, so running with `cwd` pointing at the temp workspace applies the restrictions without touching the project's settings.
+
+```ts
+// Harness side — agent-neutral
+await runner.run({
+  prompt: ReviewerAgent.buildPrompt(workspace, artifacts, round),
+  workspaceDir: reviewerWs.dir,
+  writablePaths: [`review-findings-${round}.md`],
+});
 ```
 
-**Proposer settings:**
 ```json
-{ "permissions": { "allow": ["Write(proposal.md)", "Write(design.md)", "Write(tasks.md)", "Write(spec.md)", "Write(review-findings-N.md)"], "deny": ["Write(*)"] } }
+// ClaudeCliRunner writes this into the workspace before spawning
+{ "permissions": { "allow": ["Write(review-findings-1.md)"], "deny": ["Write(*)"] } }
 ```
 
-The exact artifact filenames come from `--artifacts`, making permissions dynamic per invocation.
+**Reviewer writablePaths:** `[ review-findings-N.md ]`
+
+**Proposer writablePaths:** `[ ...artifacts, review-findings-N.md ]`
+
+The exact artifact filenames come from `--artifacts`, so the writablePaths list is dynamic per invocation. Future runners (CodexCliRunner, AnthropicSdkRunner) will implement their own sandboxing logic — possibly a different config file, possibly programmatic tool restrictions — without changing the harness contract.
 
 ### `review-findings-N.md` Format
 
@@ -406,7 +418,7 @@ The command file is a thin entry point that references the skill behavior. The s
 |---|---|
 | New wrapper command | Add `src/commands/{name}/SKILL.md`; add one import to `src/bin/cli.ts` |
 | New harnessed command | Add `src/commands/{name}/SKILL.md`, `harness.ts`, `agents.ts`; wire `run --command={name}` |
-| New runner adapter | Add `src/lib/runner/{name}.ts`; add detection check in `src/lib/runner/index.ts` |
+| New runner adapter | Add `src/lib/runner/{name}/` with `cli.ts` (plus any agent-specific helpers like `permissions.ts`, `config.ts`); add detection check in `src/lib/runner/index.ts` |
 | New agent for skill install | Add entry to `src/lib/tools.ts`; add adapter to `src/lib/adapters/` |
 | New third-party skill | Add `src/skills/{name}/` with all skill files and an attribution comment in `SKILL.md`; tsup and install pick it up automatically |
 

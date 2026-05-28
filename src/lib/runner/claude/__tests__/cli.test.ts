@@ -7,7 +7,7 @@ vi.mock('child_process', () => ({
 }));
 
 import { spawnSync } from 'child_process';
-import { ClaudeCliRunner } from '../claude-cli.js';
+import { ClaudeCliRunner } from '../cli.js';
 
 describe('ClaudeCliRunner', () => {
     beforeEach(() => {

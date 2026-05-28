@@ -1,5 +1,5 @@
 import { spawnSync } from 'child_process';
-import type { Runner, RunnerResult } from './types.js';
+import type { Runner, RunnerResult } from '../types.js';
 
 export class ClaudeCliRunner implements Runner {
     isAvailable(): boolean {

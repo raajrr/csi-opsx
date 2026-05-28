@@ -34,11 +34,11 @@ Each command lives under `src/commands/{name}/` with up to three files:
 
 | Module | Responsibility |
 |---|---|
-| `runner/types.ts` | `Runner` interface and `RunnerResult` type |
-| `runner/claude-cli.ts` | `ClaudeCliRunner` — spawns `claude -p` subprocess via `child_process.spawnSync` |
+| `runner/types.ts` | `Runner` interface, `RunnerOptions`, and `RunnerResult` type |
 | `runner/index.ts` | `resolveRunner()` — returns first available runner or `null` |
+| `runner/claude/cli.ts` | `ClaudeCliRunner` — spawns `claude -p` via `child_process.spawnSync`; calls `writePermissions` internally when `writablePaths` is provided |
+| `runner/claude/permissions.ts` | `writePermissions()` — writes `.claude/settings.json` into the temp workspace (Claude-specific helper; not used directly by the harness) |
 | `workspace.ts` | `createWorkspace()`, `copyBack()`, `cleanupWorkspace()` — temp dir lifecycle |
-| `permissions.ts` | `writePermissions()` — writes `.claude/settings.json` into a temp workspace |
 | `loop.ts` | `parseIssuesFound()`, `parseStatus()`, `findLatestFindingsRound()`, `getFindingsPath()` — parse `review-findings-N.md` frontmatter |
 | `types.ts` | `ToolId`, `CommandName`, `AgentRole` union types + `COMMAND_NAMES` |
 | `tools.ts` | tool-id → skillsDir mapping (mirrors OpenSpec `AI_TOOLS`) |
@@ -54,19 +54,19 @@ Each command lives under `src/commands/{name}/` with up to three files:
 resolve runner → start round 1
   loop:
     create reviewer workspace (temp dir, copy artifacts)
-    write restrictive settings.json → allow Write(review-findings-N.md) only
-    spawn: claude -p <reviewer prompt> --allowedTools Read,Write (cwd = temp dir)
+    runner.run({ prompt: <reviewer>, workspaceDir, writablePaths: [review-findings-N.md] })
+      └─ ClaudeCliRunner writes .claude/settings.json then spawns claude -p
     copy back review-findings-N.md → project
     parse issues-found
     if issues-found == 0 → exit (print summary)
     create proposer workspace (temp dir, copy artifacts + findings)
-    write restrictive settings.json → allow Write(artifacts + findings) only
-    spawn: claude -p <proposer prompt> --allowedTools Read,Write (cwd = temp dir)
+    runner.run({ prompt: <proposer>, workspaceDir, writablePaths: [...artifacts, findings] })
+      └─ ClaudeCliRunner writes .claude/settings.json then spawns claude -p
     copy back artifacts + findings → project
     round++
 ```
 
-Agents read project context (`CLAUDE.md`, `openspec/`, `docs/`) from absolute paths in their prompt — no copying needed since `Read` is unrestricted. Write access is restricted to only the files each agent is allowed to modify via the workspace's `.claude/settings.json`.
+Agents read project context (`CLAUDE.md`, `openspec/`, `docs/`) from absolute paths in their prompt — no copying needed since `Read` is unrestricted. Write access is restricted via `RunnerOptions.writablePaths`, which `ClaudeCliRunner` translates into a workspace-scoped `.claude/settings.json` (allow-list per file, deny `Write(*)` catchall) before spawning. The harness does not import `permissions` directly — each runner encapsulates its own sandbox mechanism.
 
 ### review-findings-N.md format
 
