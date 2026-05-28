@@ -1,5 +1,6 @@
 import { spawnSync } from 'child_process';
-import type { Runner, RunnerResult } from '../types.js';
+import type { Runner, RunnerOptions, RunnerResult } from '../types.js';
+import { writePermissions } from './permissions.js';
 
 export class ClaudeCliRunner implements Runner {
     isAvailable(): boolean {
@@ -11,7 +12,11 @@ export class ClaudeCliRunner implements Runner {
         }
     }
 
-    async run(prompt: string, workspaceDir: string): Promise<RunnerResult> {
+    async run(opts: RunnerOptions): Promise<RunnerResult> {
+        const { prompt, workspaceDir, writablePaths } = opts;
+        if (writablePaths) {
+            writePermissions(workspaceDir, writablePaths);
+        }
         const result = spawnSync(
             'claude',
             ['-p', prompt, '--allowedTools', 'Read,Write'],

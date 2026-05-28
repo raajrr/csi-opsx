@@ -4,7 +4,13 @@ export interface RunnerResult {
     stderr: string;
 }
 
+export interface RunnerOptions {
+    prompt: string;
+    workspaceDir: string;
+    writablePaths?: string[];
+}
+
 export interface Runner {
     isAvailable(): boolean;
-    run(prompt: string, workspaceDir: string): Promise<RunnerResult>;
+    run(opts: RunnerOptions): Promise<RunnerResult>;
 }

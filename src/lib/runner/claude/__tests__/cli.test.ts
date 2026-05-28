@@ -1,4 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { mkdirSync, rmSync, existsSync } from 'fs';
+import { join } from 'path';
+import { tmpdir } from 'os';
 
 // vi.mock to mock the child_process module needs to come before the import of the child_process module
 // because otherwise the import imports the real module and the mock doesn't apply.
@@ -39,7 +42,7 @@ describe('ClaudeCliRunner', () => {
             const TEST_PROMPT = 'test prompt';
             const TMP_WORKSPACE = '/tmp/workspace';
             const runner = new ClaudeCliRunner();
-            await runner.run(TEST_PROMPT, TMP_WORKSPACE);
+            await runner.run({ prompt: TEST_PROMPT, workspaceDir: TMP_WORKSPACE });
 
             expect(spawnSync).toHaveBeenCalledWith(
                 'claude',
@@ -54,7 +57,7 @@ describe('ClaudeCliRunner', () => {
             vi.mocked(spawnSync).mockReturnValue({
                 status: EXIT_CODE, stdout: OUTPUT, stderr: '',
             } as ReturnType<typeof spawnSync>);
-            const result = await new ClaudeCliRunner().run('prompt', 'tmp/ws');
+            const result = await new ClaudeCliRunner().run({ prompt: 'prompt', workspaceDir: 'tmp/ws' });
             expect(result.exitCode).toBe(EXIT_CODE);
             expect(result.stdout).toBe(OUTPUT);
         });
@@ -63,8 +66,41 @@ describe('ClaudeCliRunner', () => {
             vi.mocked(spawnSync).mockReturnValue({
                 status: null, stdout: '', stderr: 'killed',
             } as ReturnType<typeof spawnSync>);
-            const result = await new ClaudeCliRunner().run('prompt', 'tmp/ws');
+            const result = await new ClaudeCliRunner().run({ prompt: 'prompt', workspaceDir: 'tmp/ws' });
             expect(result.exitCode).toBe(1);
+        });
+
+        it('writes .claude/settings.json when writablePaths is provided', async () => {
+            vi.mocked(spawnSync).mockReturnValue({
+                status: 0, stdout: '', stderr: '',
+            } as ReturnType<typeof spawnSync>);
+
+            const tmpWs = join(tmpdir(), `cli-run-test-${Date.now()}`);
+            mkdirSync(tmpWs, { recursive: true });
+            try {
+                await new ClaudeCliRunner().run({
+                    prompt: 'prompt',
+                    workspaceDir: tmpWs,
+                    writablePaths: ['proposal.md'],
+                });
+                expect(existsSync(join(tmpWs, '.claude', 'settings.json'))).toBe(true);
+            } finally {
+                rmSync(tmpWs, { recursive: true, force: true });
+            }
+        });
+
+        it('does not write settings.json when writablePaths is omitted', async () => {
+            vi.mocked(spawnSync).mockReturnValue({
+                status: 0, stdout: '', stderr: '',
+            } as ReturnType<typeof spawnSync>);
+            const tmpWs = join(tmpdir(), `cli-run-test-${Date.now()}`);
+            mkdirSync(tmpWs, { recursive: true });
+            try {
+                await new ClaudeCliRunner().run({ prompt: 'prompt', workspaceDir: tmpWs });
+                expect(existsSync(join(tmpWs, '.claude', 'settings.json'))).toBe(false);
+            } finally {
+                rmSync(tmpWs, { recursive: true, force: true });
+            }
         });
     });
 });
