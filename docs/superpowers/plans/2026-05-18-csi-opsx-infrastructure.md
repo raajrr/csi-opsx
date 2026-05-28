@@ -19,7 +19,7 @@
 | `tsconfig.json` | Create | TypeScript ESM config |
 | `tsup.config.ts` | Create | Build config + SKILL.md asset copy |
 | `vitest.config.ts` | Create | Test runner config |
-| `src/lib/types.ts` | Create | `ToolId` and `CommandName` union types + `COMMAND_NAMES` |
+| `src/lib/types.ts` | Create | `ToolId`, `CommandName`, `AgentRole` union types + `COMMAND_NAMES` |
 | `src/lib/tools.ts` | Create | `TOOL_DIRS` mapping (ToolId → directory name) |
 | `src/lib/tool-detection.ts` | Create | `hasOpenSpecSkills()` and `getConfiguredTools()` |
 | `src/lib/__tests__/tool-detection.test.ts` | Create | Unit tests for tool detection |
@@ -182,6 +182,8 @@ git commit -m "chore: scaffold project with TypeScript, tsup, and vitest"
 export type ToolId = 'claude' | 'cursor' | 'gemini' | 'codex' | 'github-copilot';
 
 export type CommandName = 'explore' | 'propose' | 'apply' | 'archive';
+
+export type AgentRole = 'reviewer' | 'proposer';
 
 export const COMMAND_NAMES: CommandName[] = ['explore', 'propose', 'apply', 'archive'];
 ```

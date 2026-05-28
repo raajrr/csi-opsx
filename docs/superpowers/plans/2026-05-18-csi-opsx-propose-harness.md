@@ -204,7 +204,7 @@ git commit -m "feat: implement ClaudeCliRunner using claude -p subprocess"
 **Files:**
 - Create: `src/lib/runner/index.ts`
 
-- [ ] **Step 1: Write src/lib/runner/index.ts**
+- [X] **Step 1: Write src/lib/runner/index.ts**
 
 ```ts
 import type { Runner } from './types.js';
@@ -219,7 +219,7 @@ export function resolveRunner(): Runner | null {
 }
 ```
 
-- [ ] **Step 2: Commit**
+- [X] **Step 2: Commit**
 
 ```bash
 git add src/lib/runner/index.ts
@@ -246,152 +246,170 @@ import { tmpdir } from 'os';
 import { createWorkspace, copyBack, cleanupWorkspace } from '../workspace.js';
 
 describe('workspace', () => {
-  let projectDir: string;
+    let artifactsDir: string;
 
-  beforeEach(() => {
-    projectDir = join(tmpdir(), `ws-test-${Date.now()}`);
-    mkdirSync(projectDir, { recursive: true });
-    writeFileSync(join(projectDir, 'proposal.md'), '# Proposal');
-    writeFileSync(join(projectDir, 'design.md'), '# Design');
-    mkdirSync(join(projectDir, 'openspec', 'specs'), { recursive: true });
-    writeFileSync(join(projectDir, 'openspec', 'specs', 'auth.md'), '# Auth Spec');
-  });
+    const PROPOSAL_MD = 'proposal.md';
+    const PROPOSAL_CONTENT = '# Proposal';
+    const DESIGN_MD = 'design.md';
+    const DESIGN_CONTENT = '# Design';
+    const AUTH_MD = 'auth.md';
+    const AUTH_CONTENT = '# Auth Spec';
+    const OPENSPEC_DIR = 'openspec';
+    const SPECS_DIR = 'specs';
+    const AUTH_MD_SUBDIR = `${OPENSPEC_DIR}/${SPECS_DIR}/${AUTH_MD}`;
 
-  afterEach(() => {
-    rmSync(projectDir, { recursive: true, force: true });
-  });
-
-  describe('createWorkspace', () => {
-    it('creates a temp directory', () => {
-      const ws = createWorkspace('reviewer', 1, projectDir, ['proposal.md']);
-      expect(existsSync(ws.dir)).toBe(true);
-      rmSync(ws.dir, { recursive: true, force: true });
+    beforeEach(() => {
+        artifactsDir = join(tmpdir(), `ws-test-${Date.now()}`);
+        mkdirSync(artifactsDir, { recursive: true });
+        writeFileSync(join(artifactsDir, PROPOSAL_MD), PROPOSAL_CONTENT);
+        writeFileSync(join(artifactsDir, DESIGN_MD), DESIGN_CONTENT);
+        mkdirSync(join(artifactsDir, OPENSPEC_DIR, SPECS_DIR), { recursive: true });
+        writeFileSync(join(artifactsDir, OPENSPEC_DIR, SPECS_DIR, AUTH_MD), AUTH_CONTENT);
     });
 
-    it('copies flat files into the workspace root', () => {
-      const ws = createWorkspace('reviewer', 1, projectDir, ['proposal.md', 'design.md']);
-      expect(readFileSync(join(ws.dir, 'proposal.md'), 'utf8')).toBe('# Proposal');
-      expect(readFileSync(join(ws.dir, 'design.md'), 'utf8')).toBe('# Design');
-      rmSync(ws.dir, { recursive: true, force: true });
+    afterEach(() => {
+        rmSync(artifactsDir, { recursive: true, force: true });
     });
 
-    it('preserves subdirectory structure for nested paths', () => {
-      const ws = createWorkspace('reviewer', 1, projectDir, ['openspec/specs/auth.md']);
-      expect(existsSync(join(ws.dir, 'openspec', 'specs', 'auth.md'))).toBe(true);
-      rmSync(ws.dir, { recursive: true, force: true });
+    describe('createWorkspace', () => {
+       it('creates a temp workspace directory', () => {
+        const ws = createWorkspace('reviewer', 1, artifactsDir, [PROPOSAL_MD]);
+        expect(existsSync(ws.dir)).toBe(true);
+        rmSync(ws.dir, { recursive: true, force: true });
+       });
+
+       it('copies flat files into workspace directory', () => {
+           const ws = createWorkspace('reviewer', 1, artifactsDir, [PROPOSAL_MD, DESIGN_MD]);
+           expect(readFileSync(join(ws.dir, PROPOSAL_MD), 'utf-8')).toBe(PROPOSAL_CONTENT);
+           expect(readFileSync(join(ws.dir, DESIGN_MD), 'utf-8')).toBe(DESIGN_CONTENT);
+           rmSync(ws.dir, { recursive: true, force: true });
+       });
+
+       it('preserves subdirectory structure for nested paths', () => {
+           const ws = createWorkspace('reviewer', 1, artifactsDir, [AUTH_MD_SUBDIR]);
+           expect(existsSync(join(ws.dir, OPENSPEC_DIR, SPECS_DIR, AUTH_MD))).toBe(true);
+           rmSync(ws.dir, { recursive: true, force: true });
+       });
+
+       it('skips files that do not exist in the artifacts directory', () => {
+           const ws = createWorkspace('reviewer', 1, artifactsDir, ['nonexistent.md']);
+           expect(existsSync(join(ws.dir, 'nonexistent.md'))).toBe(false);
+           rmSync(ws.dir, { recursive: true, force: true });
+       });
+
+        it('dir name contains the role and round', () => {
+            const ws = createWorkspace('proposer', 3, artifactsDir, []);
+            expect(ws.dir).toContain('proposer');
+            expect(ws.dir).toContain('3');
+            rmSync(ws.dir, { recursive: true, force: true });
+        });
     });
 
-    it('skips files that do not exist in the project', () => {
-      const ws = createWorkspace('reviewer', 1, projectDir, ['nonexistent.md']);
-      expect(existsSync(join(ws.dir, 'nonexistent.md'))).toBe(false);
-      rmSync(ws.dir, { recursive: true, force: true });
+    describe('copyBack', () => {
+        it('copies a file from workspace back to the artifacts directory', () => {
+            const REVIEW_FINDINGS_1 = 'review-findings-1.md'
+            const REVIEW_CONTENT = '---\nissues-found: 2\n---';
+            const ws = createWorkspace('reviewer', 1, artifactsDir, []);
+            writeFileSync(join(ws.dir, REVIEW_FINDINGS_1), REVIEW_CONTENT);
+            copyBack(ws.dir, artifactsDir, [REVIEW_FINDINGS_1]);
+            expect(readFileSync(join(artifactsDir, REVIEW_FINDINGS_1), 'utf-8')).toBe(REVIEW_CONTENT);
+            rmSync(ws.dir, { recursive: true, force: true });
+        });
+
+        it('preserves subdirectory structure when copying back', () => {
+            const UPDATED_AUTH_CONTENT = '# Updated Auth';
+            const ws = createWorkspace('reviewer', 1, artifactsDir, [AUTH_MD_SUBDIR]);
+            writeFileSync(join(ws.dir, AUTH_MD_SUBDIR), UPDATED_AUTH_CONTENT);
+            copyBack(ws.dir, artifactsDir, [AUTH_MD_SUBDIR]);
+            expect(readFileSync(join(artifactsDir, AUTH_MD_SUBDIR), 'utf-8')).toBe(UPDATED_AUTH_CONTENT);
+            rmSync(ws.dir, { recursive: true, force: true });
+        });
+
+        it('copies multiple files with mixed paths back to the artifacts directory', () => {
+            const UPDATED_PROPOSAL_CONTENT = '# Updated Proposal';
+            const UPDATED_AUTH_CONTENT = '# Updated Auth';
+            const ws = createWorkspace('reviewer', 1, artifactsDir, [PROPOSAL_MD, AUTH_MD_SUBDIR]);
+            writeFileSync(join(ws.dir, PROPOSAL_MD), UPDATED_PROPOSAL_CONTENT);
+            writeFileSync(join(ws.dir, AUTH_MD_SUBDIR), UPDATED_AUTH_CONTENT);
+            copyBack(ws.dir, artifactsDir, [PROPOSAL_MD, AUTH_MD_SUBDIR]);
+            expect(readFileSync(join(artifactsDir, PROPOSAL_MD), 'utf-8')).toBe(UPDATED_PROPOSAL_CONTENT);
+            expect(readFileSync(join(artifactsDir, AUTH_MD_SUBDIR), 'utf-8')).toBe(UPDATED_AUTH_CONTENT);
+            rmSync(ws.dir, { recursive: true, force: true });
+        });
     });
 
-    it('dir name contains the role and round', () => {
-      const ws = createWorkspace('proposer', 3, projectDir, []);
-      expect(ws.dir).toContain('proposer');
-      expect(ws.dir).toContain('3');
-      rmSync(ws.dir, { recursive: true, force: true });
-    });
-  });
+    describe('cleanupWorkspace', () => {
+        it('removes the workspace directory', () => {
+            const ws = createWorkspace('reviewer', 1, artifactsDir, []);
+            cleanupWorkspace(ws.dir);
+            expect(existsSync(ws.dir)).toBe(false);
+        });
 
-  describe('copyBack', () => {
-    it('copies a file from workspace back to the project directory', () => {
-      const ws = createWorkspace('reviewer', 1, projectDir, ['proposal.md']);
-      writeFileSync(join(ws.dir, 'review-findings-1.md'), '---\nissues-found: 2\n---');
-      copyBack(ws.dir, projectDir, ['review-findings-1.md']);
-      expect(readFileSync(join(projectDir, 'review-findings-1.md'), 'utf8')).toContain('issues-found: 2');
-      rmSync(ws.dir, { recursive: true, force: true });
+        it('does not throw if workspace does not exist', () => {
+            expect(() => cleanupWorkspace('/tmp/nonexistent-csi-opsx-xyz')).not.toThrow();
+        });
     });
-
-    it('preserves subdirectory structure when copying back', () => {
-      const ws = createWorkspace('proposer', 1, projectDir, ['openspec/specs/auth.md']);
-      writeFileSync(join(ws.dir, 'openspec', 'specs', 'auth.md'), '# Updated Auth');
-      copyBack(ws.dir, projectDir, ['openspec/specs/auth.md']);
-      expect(readFileSync(join(projectDir, 'openspec', 'specs', 'auth.md'), 'utf8')).toBe('# Updated Auth');
-      rmSync(ws.dir, { recursive: true, force: true });
-    });
-
-    it('copies multiple files with mixed paths back to the project', () => {
-      const ws = createWorkspace('proposer', 1, projectDir, ['proposal.md', 'openspec/specs/auth.md']);
-      writeFileSync(join(ws.dir, 'proposal.md'), '# Updated Proposal');
-      writeFileSync(join(ws.dir, 'openspec', 'specs', 'auth.md'), '# Updated Auth');
-      copyBack(ws.dir, projectDir, ['proposal.md', 'openspec/specs/auth.md']);
-      expect(readFileSync(join(projectDir, 'proposal.md'), 'utf8')).toBe('# Updated Proposal');
-      expect(readFileSync(join(projectDir, 'openspec', 'specs', 'auth.md'), 'utf8')).toBe('# Updated Auth');
-      rmSync(ws.dir, { recursive: true, force: true });
-    });
-  });
-
-  describe('cleanupWorkspace', () => {
-    it('removes the workspace directory', () => {
-      const ws = createWorkspace('reviewer', 1, projectDir, []);
-      cleanupWorkspace(ws.dir);
-      expect(existsSync(ws.dir)).toBe(false);
-    });
-
-    it('does not throw if workspace does not exist', () => {
-      expect(() => cleanupWorkspace('/tmp/nonexistent-csi-opsx-xyz')).not.toThrow();
-    });
-  });
 });
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [X] **Step 2: Run tests to verify they fail**
 
 Run: `npm test`
 
 Expected: FAIL — `Cannot find module '../workspace.js'`
 
-- [ ] **Step 3: Implement src/lib/workspace.ts**
+- [X] **Step 3: Implement src/lib/workspace.ts**
 
 ```ts
 import { mkdirSync, copyFileSync, existsSync, rmSync } from 'fs';
 import { join, dirname } from 'path';
 import { tmpdir } from 'os';
+import type { AgentRole } from './types.js';
 
 export interface Workspace {
-  dir: string;
+    dir: string;
 }
 
 export function createWorkspace(
-  role: 'reviewer' | 'proposer',
-  round: number,
-  projectDir: string,
-  relativeFiles: string[]
+    role: AgentRole,
+    round: number,
+    artifactsDir: string,
+    relativeFiles: string[]
 ): Workspace {
-  const dir = join(tmpdir(), `csi-opsx-${role}-${round}-${Date.now()}`);
-  mkdirSync(dir, { recursive: true });
+    const workspaceDir = join(tmpdir(), `csi-opsx-${role}-${round}-${Date.now()}`);
+    mkdirSync(workspaceDir, { recursive: true });
 
-  for (const relFile of relativeFiles) {
-    const src = join(projectDir, relFile);
-    if (!existsSync(src)) continue;
-    const dest = join(dir, relFile);
-    mkdirSync(dirname(dest), { recursive: true });
-    copyFileSync(src, dest);
-  }
+    for (const relFile of relativeFiles) {
+        const src = join(artifactsDir, relFile);
+        if (existsSync(src)) {
+            const dest = join(workspaceDir, relFile);
+            mkdirSync(dirname(dest), { recursive: true });
+            copyFileSync(src, dest);
+        }
+    }
 
-  return { dir };
+    return { dir: workspaceDir };
 }
 
-export function copyBack(workspaceDir: string, projectDir: string, relativeFiles: string[]): void {
-  for (const relFile of relativeFiles) {
-    const src = join(workspaceDir, relFile);
-    if (!existsSync(src)) continue;
-    const dest = join(projectDir, relFile);
-    mkdirSync(dirname(dest), { recursive: true });
-    copyFileSync(src, dest);
-  }
+export function copyBack(workspaceDir: string, artifactsDir: string, relativeFiles: string[]): void {
+    for (const relFile of relativeFiles) {
+        const src = join(workspaceDir, relFile);
+        if (existsSync(src)) {
+            const dest = join(artifactsDir, relFile);
+            mkdirSync(dirname(dest), { recursive: true });
+            copyFileSync(src, dest);
+        }
+    }
 }
 
 export function cleanupWorkspace(workspaceDir: string): void {
-  if (existsSync(workspaceDir)) {
-    rmSync(workspaceDir, { recursive: true, force: true });
-  }
+    if (existsSync(workspaceDir)) {
+        rmSync(workspaceDir, { recursive: true, force: true });
+    }
 }
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [X] **Step 4: Run tests to verify they pass**
 
 Run: `npm test`
 
@@ -584,7 +602,7 @@ describe('loop', () => {
   });
 
   describe('getFindingsPath', () => {
-    it('returns review-findings-N.md in the project dir', () => {
+    it('returns review-findings-N.md in the artifacts directory', () => {
       expect(getFindingsPath('/tmp/project', 2)).toBe(join('/tmp/project', 'review-findings-2.md'));
     });
   });
@@ -617,17 +635,17 @@ export function parseStatus(content: string): FindingsStatus {
   return match[1] as FindingsStatus;
 }
 
-export function findLatestFindingsRound(projectDir: string): number {
-  if (!existsSync(projectDir)) return 0;
-  const rounds = readdirSync(projectDir)
+export function findLatestFindingsRound(artifactsDir: string): number {
+  if (!existsSync(artifactsDir)) return 0;
+  const rounds = readdirSync(artifactsDir)
     .map((f) => f.match(/^review-findings-(\d+)\.md$/))
     .filter((m): m is RegExpMatchArray => m !== null)
     .map((m) => parseInt(m[1], 10));
   return rounds.length === 0 ? 0 : Math.max(...rounds);
 }
 
-export function getFindingsPath(projectDir: string, round: number): string {
-  return join(projectDir, `review-findings-${round}.md`);
+export function getFindingsPath(artifactsDir: string, round: number): string {
+  return join(artifactsDir, `review-findings-${round}.md`);
 }
 ```
 
@@ -654,23 +672,25 @@ git commit -m "feat: implement loop controller parsers for findings files"
 - [ ] **Step 1: Write src/commands/propose/agents.ts**
 
 ```ts
+import type { AgentRole } from '../../lib/types.js';
+
 export interface AgentConfig {
-  role: 'reviewer' | 'proposer';
-  buildPrompt(projectDir: string, artifactRelPaths: string[], round: number): string;
+  role: AgentRole;
+  buildPrompt(artifactsDir: string, artifactRelPaths: string[], round: number): string;
 }
 
 export const ReviewerAgent: AgentConfig = {
   role: 'reviewer',
-  buildPrompt(projectDir, artifactRelPaths, round) {
+  buildPrompt(artifactsDir, artifactRelPaths, round) {
     return `You are a thorough technical reviewer.
 
 Your working directory contains these artifact files to review:
 ${artifactRelPaths.map((a) => `- ${a}`).join('\n')}
 
 Read each artifact file. Also read the following for project context (read-only, do not modify):
-- ${projectDir}/CLAUDE.md (project conventions, if it exists)
-- ${projectDir}/openspec/ (specs and schemas)
-- ${projectDir}/docs/ (ADRs and other docs)
+- ${artifactsDir}/CLAUDE.md (project conventions, if it exists)
+- ${artifactsDir}/openspec/ (specs and schemas)
+- ${artifactsDir}/docs/ (ADRs and other docs)
 ${round > 1 ? `- review-findings-${round - 1}.md (previous round findings — verify each was addressed)` : ''}
 
 Review the artifacts for:
@@ -697,7 +717,7 @@ If no issues are found, write issues-found: 0 and include no issue sections.`;
 
 export const ProposerAgent: AgentConfig = {
   role: 'proposer',
-  buildPrompt(projectDir, artifactRelPaths, round) {
+  buildPrompt(artifactsDir, artifactRelPaths, round) {
     return `You are an expert technical writer and software architect.
 
 Your working directory contains these artifact files that need revision:
@@ -707,9 +727,9 @@ It also contains the reviewer's findings:
 - review-findings-${round}.md
 
 Read the project context from (read-only, do not modify):
-- ${projectDir}/CLAUDE.md (project conventions, if it exists)
-- ${projectDir}/openspec/ (specs and schemas)
-- ${projectDir}/docs/ (ADRs and other docs)
+- ${artifactsDir}/CLAUDE.md (project conventions, if it exists)
+- ${artifactsDir}/openspec/ (specs and schemas)
+- ${artifactsDir}/docs/ (ADRs and other docs)
 
 Address every issue listed in review-findings-${round}.md. Update the relevant artifact files.
 
@@ -906,24 +926,24 @@ import { resolveRunner } from '../../../lib/runner/index.js';
 import { runProposeHarness } from '../harness.js';
 
 describe('runProposeHarness', () => {
-  let projectDir: string;
+  let artifactsDir: string;
 
   beforeEach(() => {
-    projectDir = join(tmpdir(), `harness-test-${Date.now()}`);
-    mkdirSync(projectDir, { recursive: true });
-    writeFileSync(join(projectDir, 'proposal.md'), '# Proposal');
-    writeFileSync(join(projectDir, 'design.md'), '# Design');
+    artifactsDir = join(tmpdir(), `harness-test-${Date.now()}`);
+    mkdirSync(artifactsDir, { recursive: true });
+    writeFileSync(join(artifactsDir, 'proposal.md'), '# Proposal');
+    writeFileSync(join(artifactsDir, 'design.md'), '# Design');
   });
 
   afterEach(() => {
-    rmSync(projectDir, { recursive: true, force: true });
+    rmSync(artifactsDir, { recursive: true, force: true });
     vi.resetAllMocks();
   });
 
   it('exits immediately and prints notice when no runner is available', async () => {
     vi.mocked(resolveRunner).mockReturnValue(null);
     const consoleSpy = vi.spyOn(console, 'log');
-    await runProposeHarness({ workspace: projectDir, artifacts: ['proposal.md'] });
+    await runProposeHarness({ workspace: artifactsDir, artifacts: ['proposal.md'] });
     expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('No runner available'));
   });
 
@@ -940,8 +960,8 @@ describe('runProposeHarness', () => {
     });
 
     const consoleSpy = vi.spyOn(console, 'log');
-    await runProposeHarness({ workspace: projectDir, artifacts: ['proposal.md', 'design.md'] });
-    expect(existsSync(join(projectDir, 'review-findings-1.md'))).toBe(true);
+    await runProposeHarness({ workspace: artifactsDir, artifacts: ['proposal.md', 'design.md'] });
+    expect(existsSync(join(artifactsDir, 'review-findings-1.md'))).toBe(true);
     expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('csi-opsx propose complete'));
   });
 
@@ -975,9 +995,9 @@ describe('runProposeHarness', () => {
       }),
     });
 
-    await runProposeHarness({ workspace: projectDir, artifacts: ['proposal.md', 'design.md'] });
+    await runProposeHarness({ workspace: artifactsDir, artifacts: ['proposal.md', 'design.md'] });
     expect(callCount).toBe(3);
-    expect(existsSync(join(projectDir, 'review-findings-2.md'))).toBe(true);
+    expect(existsSync(join(artifactsDir, 'review-findings-2.md'))).toBe(true);
   });
 });
 ```

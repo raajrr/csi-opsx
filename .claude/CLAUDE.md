@@ -40,7 +40,7 @@ Each command lives under `src/commands/{name}/` with up to three files:
 | `workspace.ts` | `createWorkspace()`, `copyBack()`, `cleanupWorkspace()` — temp dir lifecycle |
 | `permissions.ts` | `writePermissions()` — writes `.claude/settings.json` into a temp workspace |
 | `loop.ts` | `parseIssuesFound()`, `parseStatus()`, `findLatestFindingsRound()`, `getFindingsPath()` — parse `review-findings-N.md` frontmatter |
-| `types.ts` | `ToolId` and `CommandName` union types + `COMMAND_NAMES` |
+| `types.ts` | `ToolId`, `CommandName`, `AgentRole` union types + `COMMAND_NAMES` |
 | `tools.ts` | tool-id → skillsDir mapping (mirrors OpenSpec `AI_TOOLS`) |
 | `tool-detection.ts` | `getConfiguredTools()` — detects which agents have OpenSpec skills installed |
 | `adapters/types.ts` | `SkillAdapter` interface |

@@ -62,7 +62,7 @@ csi-opsx/
       archive/
         SKILL.md            ← behavioral instructions (asset, not compiled)
     lib/
-      types.ts              ← ToolId + CommandName union types
+      types.ts              ← ToolId, CommandName, AgentRole union types
       tools.ts              ← tool-id → skillsDir mapping (mirrors OpenSpec AI_TOOLS)
       tool-detection.ts     ← detects which agents are configured via OpenSpec skill files
       adapters/
