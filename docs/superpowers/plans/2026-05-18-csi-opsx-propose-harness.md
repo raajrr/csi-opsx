@@ -2,13 +2,26 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Replace the propose harness stub with a working reviewer→proposer loop that spawns `claude -p` subprocesses in isolated temp workspaces until a reviewer reports zero issues.
+**Goal:** Replace the propose-harness stub with a working reviewer→proposer loop that spawns `claude -p` in isolated temp workspaces — reviewing the artifacts of one OpenSpec change folder until the reviewer reports zero issues.
 
-**Architecture:** Five focused library modules (runner, workspace, permissions, loop) feed into two agent config objects (ReviewerAgent, ProposerAgent) that the harness orchestrator drives. The runner adapter pattern keeps future runners (Codex, Anthropic SDK) as isolated additions. Temp workspaces carry only writable files; agents read all context from the real project via absolute paths in the prompt.
+**Architecture:** The harness takes a single `--change <name>` and *enumerates* the change folder itself (it never trusts a path list). Each agent runs with `cwd` = a temp workspace; the **workspace is the write boundary** (`--permission-mode acceptEdits`), and the project is re-granted **read-only** via `additionalDirectories` + `Write`/`Edit` `deny` rules in a per-workspace `.claude/settings.json`. The reviewer reads artifacts *in place* and writes only `review-findings-N.md`; the proposer edits *writable copies* of the artifacts and owns the `status` flip. The project is the checkpoint — copy-back happens only on a clean agent exit, findings last. See the design spec: `docs/superpowers/specs/2026-05-18-csi-opsx-design.md`.
 
-**Tech Stack:** TypeScript 5, Vitest (unit + integration tests), Node.js `child_process.spawnSync` for subprocess dispatch, Node.js `fs` / `os` built-ins for workspace management
+**Tech Stack:** TypeScript 5 (ESM, `.js` import specifiers), Vitest (unit + a real-`claude` integration test), Node `child_process.spawnSync`, Node `fs`/`os`/`crypto`/`path`.
 
-**Prerequisite:** Plan 1 (csi-opsx Infrastructure) must be complete. The harness stub at `src/commands/propose/harness.ts` will be replaced in Task 8.
+**Prerequisite:** Plan 1 (csi-opsx Infrastructure) complete. Tasks 1–5b of the *previous* version of this plan were partially built and committed; this revision **reworks** that committed code to the proven sandbox design (the old `Write(*)`-deny sandbox was empirically non-functional). Where a file already exists, the task says **Rework**/**Finish** and shows the full new contents.
+
+---
+
+## Why this revision exists (read once)
+
+The originally-committed sandbox wrote `{ allow: [Write(file)], deny: [Write(*)] }` and spawned `claude -p --allowedTools Read,Write`. Real `claude -p` probing proved this grants the agent **nothing** (`deny: Write(*)` overrides allow) — and separately that `--allowedTools Read,Write` blanket-allows writes *everywhere*, including outside the workspace. The working mechanism (verified on CLI 2.1.158) is:
+
+- spawn `claude -p <prompt> --permission-mode acceptEdits --setting-sources project` with `cwd` = the temp workspace;
+- write `workspace/.claude/settings.json` = `{ permissions: { additionalDirectories: [projectRoot], deny: [Write(<glob>/**), Edit(<glob>/**)] } }`;
+- the glob uses MSYS form on Windows (`//c/Users/...`) and `//`-prefixed POSIX on Unix;
+- never allow `Bash` (the one path-agnostic write bypass).
+
+A **deny-rule block does not appear in the `permission_denials` JSON** — the only ground truth is the file state. So the sandbox is gated by a real `claude -p` integration test that asserts files, not JSON shape (Task 3).
 
 ---
 
@@ -16,87 +29,195 @@
 
 | File | Action | Responsibility |
 |---|---|---|
-| `src/lib/runner/types.ts` | Create | `Runner` interface and `RunnerResult` type |
-| `src/lib/runner/claude-cli.ts` | Create | `ClaudeCliRunner` — spawns `claude -p` subprocess |
-| `src/lib/runner/index.ts` | Create | `resolveRunner()` — detects available runner |
-| `src/lib/runner/__tests__/claude-cli.test.ts` | Create | Unit tests for ClaudeCliRunner |
-| `src/lib/workspace.ts` | Create | `createWorkspace()`, `copyBack()`, `cleanupWorkspace()` |
-| `src/lib/__tests__/workspace.test.ts` | Create | Unit tests for workspace management |
-| `src/lib/permissions.ts` | Create | `writePermissions()` — writes `.claude/settings.json` into workspace |
-| `src/lib/__tests__/permissions.test.ts` | Create | Unit tests for permissions builder |
-| `src/lib/loop.ts` | Create | `parseIssuesFound()`, `parseStatus()`, `findLatestFindingsRound()`, `getFindingsPath()` |
-| `src/lib/__tests__/loop.test.ts` | Create | Unit tests for loop controller parsers |
-| `src/commands/propose/agents.ts` | Create | `ReviewerAgent` and `ProposerAgent` configs with prompt builders |
-| `src/commands/propose/harness.ts` | Modify | Replace stub with full `runProposeHarness()` implementation |
-| `src/commands/propose/__tests__/harness.test.ts` | Create | Integration tests for full harness loop |
+| `src/lib/runner/claude/permissions.ts` | **Rework** | `toPermissionGlob(absPath)` + `writePermissions(workspaceDir, projectRoot)` → acceptEdits-style `settings.json` (read-only project via deny + `additionalDirectories`) |
+| `src/lib/runner/claude/__tests__/permissions.test.ts` | **Rework** | Unit-test the new settings shape + `toPermissionGlob` for Windows and POSIX path shapes |
+| `src/lib/runner/types.ts` | **Rework** | `RunnerOptions`: drop `writableRelativePaths`, add `projectRoot?` |
+| `src/lib/runner/claude/cli.ts` | **Rework** | Spawn `--permission-mode acceptEdits --setting-sources project`; call `writePermissions(workspaceDir, projectRoot)` |
+| `src/lib/runner/claude/__tests__/cli.test.ts` | **Rework** | Assert the new flags + settings written when `projectRoot` present |
+| `src/lib/runner/claude/__tests__/sandbox.integration.test.ts` | **Create** | Real `claude -p`: in-workspace write succeeds, project write blocked (file-state); spaced-path case; auto-skips if `claude` absent |
+| `src/lib/workspace.ts` | **Rework** | `createWorkspace`, `copyBack`, `cleanupWorkspace`, `sweepOrphanWorkspaces`; deterministic name `csi-opsx-<base>-<hash>-<change>-<role>-<round>` |
+| `src/lib/__tests__/workspace.test.ts` | **Rework** | Update for the new signature + name; add sweep test |
+| `src/lib/loop.ts` | **Finish** | Frontmatter-anchored `parseIssuesFound`/`parseStatus`; implement `findLatestFindingsRound`/`getFindingsPath` |
+| `src/lib/__tests__/loop.test.ts` | **Modify** | Add anchoring tests (body `status:`/`is-solved:` ignored) |
+| `src/lib/artifacts.ts` | **Create** | `validateChangeName`, `getChangeDir`, `enumerateChangeArtifacts` |
+| `src/lib/__tests__/artifacts.test.ts` | **Create** | Optional files, nested specs, exclusions, traversal rejection, empty/missing folder |
+| `src/commands/propose/agents.ts` | **Create** | `ReviewerAgent`/`ProposerAgent` prompt builders (is-solved format, least-privilege instructions) |
+| `src/commands/propose/harness.ts` | **Rework** | `runProposeHarness({workspace, changeName, maxRounds?})` — validate → enumerate → loop |
+| `src/bin/cli.ts` | **Modify** | `run` command: `--change <name>` (was `--artifacts`), add `--max-rounds` |
+| `src/commands/propose/SKILL.md` | **Modify** | change-name cascade + empty-guard + `--change` invocation |
+| `src/commands/propose/__tests__/harness.test.ts` | **Create** | Mocked-runner loop tests (incl. resume-open⇒proposer, copy-back-only-on-clean-exit) |
+
+**Naming convention used throughout:** `projectRoot` = the real project dir (the `--workspace` CLI arg). `workspaceDir` = the per-run temp agent dir (the `cwd`). `changeDir` = `<projectRoot>/openspec/changes/<changeName>` — this is the `artifactsDir` passed to workspace copy helpers.
 
 ---
 
-### Task 1: Runner types
+### Task 1: Rework permissions.ts — acceptEdits sandbox + path→glob helper
 
 **Files:**
-- Create: `src/lib/runner/types.ts`
+- Rework: `src/lib/runner/claude/permissions.ts`
+- Rework: `src/lib/runner/claude/__tests__/permissions.test.ts`
 
-- [X] **Step 1: Write src/lib/runner/types.ts**
+- [ ] **Step 1: Replace the test file with tests for the new behavior**
+
+Overwrite `src/lib/runner/claude/__tests__/permissions.test.ts`:
 
 ```ts
-export interface RunnerResult {
-  exitCode: number;
-  stdout: string;
-  stderr: string;
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { mkdirSync, rmSync, existsSync, readFileSync } from 'fs';
+import { join } from 'path';
+import { tmpdir } from 'os';
+import { writePermissions, toPermissionGlob } from '../permissions.js';
+
+describe('toPermissionGlob', () => {
+  it('converts a Windows backslash drive path to MSYS form', () => {
+    expect(toPermissionGlob('C:\\Users\\me\\proj')).toBe('//c/Users/me/proj');
+  });
+
+  it('converts a Windows forward-slash drive path to MSYS form (lowercased drive)', () => {
+    expect(toPermissionGlob('D:/Dev/Personal Projects/csi-opsx')).toBe('//d/Dev/Personal Projects/csi-opsx');
+  });
+
+  it('prefixes a POSIX absolute path with one extra slash', () => {
+    expect(toPermissionGlob('/Users/me/proj')).toBe('//Users/me/proj');
+  });
+});
+
+describe('writePermissions', () => {
+  let workspaceDir: string;
+  const PROJECT_ROOT = 'C:\\Users\\me\\proj';
+
+  beforeEach(() => {
+    workspaceDir = join(tmpdir(), `perms-test-${Date.now()}`);
+    mkdirSync(workspaceDir, { recursive: true });
+  });
+  afterEach(() => {
+    rmSync(workspaceDir, { recursive: true, force: true });
+  });
+
+  it('creates .claude/settings.json', () => {
+    writePermissions(workspaceDir, PROJECT_ROOT);
+    expect(existsSync(join(workspaceDir, '.claude', 'settings.json'))).toBe(true);
+  });
+
+  it('lists the project root under additionalDirectories (native path)', () => {
+    writePermissions(workspaceDir, PROJECT_ROOT);
+    const s = JSON.parse(readFileSync(join(workspaceDir, '.claude', 'settings.json'), 'utf8'));
+    expect(s.permissions.additionalDirectories).toEqual([PROJECT_ROOT]);
+  });
+
+  it('denies Write and Edit on the project subtree using the glob form', () => {
+    writePermissions(workspaceDir, PROJECT_ROOT);
+    const s = JSON.parse(readFileSync(join(workspaceDir, '.claude', 'settings.json'), 'utf8'));
+    expect(s.permissions.deny).toContain('Write(//c/Users/me/proj/**)');
+    expect(s.permissions.deny).toContain('Edit(//c/Users/me/proj/**)');
+  });
+
+  it('does NOT emit an allow list or a Write(*) catch-all', () => {
+    writePermissions(workspaceDir, PROJECT_ROOT);
+    const s = JSON.parse(readFileSync(join(workspaceDir, '.claude', 'settings.json'), 'utf8'));
+    expect(s.permissions.allow).toBeUndefined();
+    expect(s.permissions.deny).not.toContain('Write(*)');
+  });
+});
+```
+
+- [ ] **Step 2: Run tests to verify they fail**
+
+Run: `npx vitest run src/lib/runner/claude/__tests__/permissions.test.ts`
+
+Expected: FAIL — `toPermissionGlob` is not exported; assertions on `additionalDirectories`/glob deny do not match the old output.
+
+- [ ] **Step 3: Replace src/lib/runner/claude/permissions.ts**
+
+```ts
+import { mkdirSync, writeFileSync } from 'fs';
+import { join } from 'path';
+
+// Convert an absolute filesystem path into the glob form Claude Code's permission
+// engine matches against. Detection is by path SHAPE (drive letter), not process.platform,
+// so this stays a pure string function that is unit-testable for both OSes from any machine.
+//   Windows: C:\Users\me\proj  -> //c/Users/me/proj   (MSYS: '//' + lowercase drive segment, no colon)
+//   POSIX:   /Users/me/proj    -> //Users/me/proj      (absolute path with one extra leading '/')
+export function toPermissionGlob(absPath: string): string {
+  const drive = absPath.match(/^([A-Za-z]):[\\/](.*)$/);
+  if (drive) {
+    const letter = drive[1].toLowerCase();
+    const rest = drive[2].replace(/\\/g, '/');
+    return `//${letter}/${rest}`;
+  }
+  const posix = absPath.replace(/\\/g, '/');
+  return posix.startsWith('/') ? `/${posix}` : `//${posix}`;
 }
 
-export interface Runner {
-  isAvailable(): boolean;
-  run(prompt: string, workspaceDir: string): Promise<RunnerResult>;
+// Write the per-workspace sandbox config. The workspace (cwd) is writable under
+// --permission-mode acceptEdits; this re-grants READ access to the project via
+// additionalDirectories, then claws back WRITE/EDIT on the project with deny rules
+// (deny overrides both allow and the acceptEdits mode).
+export function writePermissions(workspaceDir: string, projectRoot: string): void {
+  const settingsDir = join(workspaceDir, '.claude');
+  mkdirSync(settingsDir, { recursive: true });
+
+  const glob = toPermissionGlob(projectRoot);
+  const settings = {
+    permissions: {
+      additionalDirectories: [projectRoot],
+      deny: [`Write(${glob}/**)`, `Edit(${glob}/**)`],
+    },
+  };
+
+  writeFileSync(join(settingsDir, 'settings.json'), JSON.stringify(settings, null, 2));
 }
 ```
 
-- [X] **Step 2: Commit**
+- [ ] **Step 4: Run tests to verify they pass**
+
+Run: `npx vitest run src/lib/runner/claude/__tests__/permissions.test.ts`
+
+Expected: PASS — all 8 tests pass.
+
+- [ ] **Step 5: Commit**
 
 ```bash
-git add src/lib/runner/types.ts
-git commit -m "feat: add Runner interface and RunnerResult type"
+git add src/lib/runner/claude/permissions.ts src/lib/runner/claude/__tests__/permissions.test.ts
+git commit -m "feat: rework permissions to acceptEdits sandbox + path->glob helper"
 ```
 
 ---
 
-### Task 2: ClaudeCliRunner
+### Task 2: Rework Runner types + ClaudeCliRunner
 
 **Files:**
-- Create: `src/lib/runner/claude-cli.ts`
-- Create: `src/lib/runner/__tests__/claude-cli.test.ts`
+- Rework: `src/lib/runner/types.ts`
+- Rework: `src/lib/runner/claude/cli.ts`
+- Rework: `src/lib/runner/claude/__tests__/cli.test.ts`
 
-- [X] **Step 1: Write failing tests**
+- [ ] **Step 1: Update the test file for the new flags + projectRoot behavior**
 
-Create `src/lib/runner/__tests__/claude-cli.test.ts`:
+Overwrite `src/lib/runner/claude/__tests__/cli.test.ts`:
 
 ```ts
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { mkdirSync, rmSync, existsSync } from 'fs';
+import { join } from 'path';
+import { tmpdir } from 'os';
 
-vi.mock('child_process', () => ({
-  spawnSync: vi.fn(),
-}));
+vi.mock('child_process', () => ({ spawnSync: vi.fn() }));
 
 import { spawnSync } from 'child_process';
-import { ClaudeCliRunner } from '../claude-cli.js';
+import { ClaudeCliRunner } from '../cli.js';
 
 describe('ClaudeCliRunner', () => {
-  beforeEach(() => {
-    vi.resetAllMocks();
-  });
+  beforeEach(() => { vi.resetAllMocks(); });
 
   describe('isAvailable', () => {
     it('returns true when claude --version exits 0', () => {
       vi.mocked(spawnSync).mockReturnValue({ status: 0 } as ReturnType<typeof spawnSync>);
       expect(new ClaudeCliRunner().isAvailable()).toBe(true);
     });
-
     it('returns false when claude --version fails', () => {
       vi.mocked(spawnSync).mockReturnValue({ status: 1 } as ReturnType<typeof spawnSync>);
       expect(new ClaudeCliRunner().isAvailable()).toBe(false);
     });
-
     it('returns false when spawnSync throws (claude not on PATH)', () => {
       vi.mocked(spawnSync).mockImplementation(() => { throw new Error('ENOENT'); });
       expect(new ClaudeCliRunner().isAvailable()).toBe(false);
@@ -104,293 +225,388 @@ describe('ClaudeCliRunner', () => {
   });
 
   describe('run', () => {
-    it('calls claude -p with the prompt and --allowedTools Read,Write', async () => {
-      vi.mocked(spawnSync).mockReturnValue({
-        status: 0, stdout: '', stderr: '',
-      } as ReturnType<typeof spawnSync>);
-      const TEST_PROMPT = 'test prompt';
-      const TMP_WORKSPACE = '/tmp/workspace';
-      const runner = new ClaudeCliRunner();
-      await runner.run(TEST_PROMPT, TMP_WORKSPACE);
-      expect(spawnSync).toHaveBeenCalledWith(
-        'claude',
-        ['-p', TEST_PROMPT, '--allowedTools', 'Read,Write'],
-        expect.objectContaining({ cwd: TMP_WORKSPACE })
-      );
+    it('spawns claude -p with acceptEdits and project setting-sources (never --allowedTools)', async () => {
+      vi.mocked(spawnSync).mockReturnValue({ status: 0, stdout: '', stderr: '' } as ReturnType<typeof spawnSync>);
+      const PROMPT = 'review please';
+      const WS = join(tmpdir(), `cli-args-${Date.now()}`);
+      mkdirSync(WS, { recursive: true });
+      try {
+        await new ClaudeCliRunner().run({ prompt: PROMPT, workspaceDir: WS });
+        const [cmd, args, options] = vi.mocked(spawnSync).mock.calls[0];
+        expect(cmd).toBe('claude');
+        expect(args).toEqual(['-p', PROMPT, '--permission-mode', 'acceptEdits', '--setting-sources', 'project']);
+        expect(args).not.toContain('--allowedTools');
+        expect(options).toMatchObject({ cwd: WS });
+      } finally {
+        rmSync(WS, { recursive: true, force: true });
+      }
     });
 
-    it('returns exitCode 0 on success', async () => {
-      const EXIT_CODE = 0;
-      const OUTPUT = 'output';
-      vi.mocked(spawnSync).mockReturnValue({
-        status: EXIT_CODE, stdout: OUTPUT, stderr: '',
-      } as ReturnType<typeof spawnSync>);
-      const result = await new ClaudeCliRunner().run('prompt', 'tmp/ws');
-      expect(result.exitCode).toBe(EXIT_CODE);
-      expect(result.stdout).toBe(OUTPUT);
+    it('writes .claude/settings.json when projectRoot is provided', async () => {
+      vi.mocked(spawnSync).mockReturnValue({ status: 0, stdout: '', stderr: '' } as ReturnType<typeof spawnSync>);
+      const WS = join(tmpdir(), `cli-perm-${Date.now()}`);
+      mkdirSync(WS, { recursive: true });
+      try {
+        await new ClaudeCliRunner().run({ prompt: 'p', workspaceDir: WS, projectRoot: 'C:\\Users\\me\\proj' });
+        expect(existsSync(join(WS, '.claude', 'settings.json'))).toBe(true);
+      } finally {
+        rmSync(WS, { recursive: true, force: true });
+      }
     });
 
-    it('returns exitCode 1 when status is null', async () => {
-      vi.mocked(spawnSync).mockReturnValue({
-        status: null, stdout: '', stderr: 'killed',
-      } as ReturnType<typeof spawnSync>);
-      const result = await new ClaudeCliRunner().run('prompt', '/tmp/ws');
-      expect(result.exitCode).toBe(1);
+    it('does NOT write settings.json when projectRoot is omitted', async () => {
+      vi.mocked(spawnSync).mockReturnValue({ status: 0, stdout: '', stderr: '' } as ReturnType<typeof spawnSync>);
+      const WS = join(tmpdir(), `cli-noperm-${Date.now()}`);
+      mkdirSync(WS, { recursive: true });
+      try {
+        await new ClaudeCliRunner().run({ prompt: 'p', workspaceDir: WS });
+        expect(existsSync(join(WS, '.claude', 'settings.json'))).toBe(false);
+      } finally {
+        rmSync(WS, { recursive: true, force: true });
+      }
+    });
+
+    it('returns exitCode 0 and stdout on success', async () => {
+      vi.mocked(spawnSync).mockReturnValue({ status: 0, stdout: 'out', stderr: '' } as ReturnType<typeof spawnSync>);
+      const r = await new ClaudeCliRunner().run({ prompt: 'p', workspaceDir: '/tmp/ws' });
+      expect(r.exitCode).toBe(0);
+      expect(r.stdout).toBe('out');
+    });
+
+    it('returns exitCode 1 when status is null (killed)', async () => {
+      vi.mocked(spawnSync).mockReturnValue({ status: null, stdout: '', stderr: 'killed' } as ReturnType<typeof spawnSync>);
+      const r = await new ClaudeCliRunner().run({ prompt: 'p', workspaceDir: '/tmp/ws' });
+      expect(r.exitCode).toBe(1);
     });
   });
 });
 ```
 
-- [X] **Step 2: Run tests to verify they fail**
+- [ ] **Step 2: Run tests to verify they fail**
 
-Run: `npm test`
+Run: `npx vitest run src/lib/runner/claude/__tests__/cli.test.ts`
 
-Expected: FAIL — `Cannot find module '../claude-cli.js'`
+Expected: FAIL — the current `cli.ts` still passes `--allowedTools Read,Write` and reads `writableRelativePaths`.
 
-- [X] **Step 3: Implement src/lib/runner/claude-cli.ts**
+- [ ] **Step 3: Replace src/lib/runner/types.ts**
+
+```ts
+export interface RunnerResult {
+    exitCode: number;
+    stdout: string;
+    stderr: string;
+}
+
+export interface RunnerOptions {
+    prompt: string;
+    workspaceDir: string;   // the temp agent cwd (the only writable area)
+    projectRoot?: string;   // the real project dir; when set, the runner sandboxes the project read-only
+}
+
+export interface Runner {
+    isAvailable(): boolean;
+    run(opts: RunnerOptions): Promise<RunnerResult>;
+}
+```
+
+- [ ] **Step 4: Replace src/lib/runner/claude/cli.ts**
 
 ```ts
 import { spawnSync } from 'child_process';
-import type { Runner, RunnerResult } from './types.js';
+import type { Runner, RunnerOptions, RunnerResult } from '../types.js';
+import { writePermissions } from './permissions.js';
 
 export class ClaudeCliRunner implements Runner {
-  isAvailable(): boolean {
+    isAvailable(): boolean {
+        try {
+            const result = spawnSync('claude', ['--version'], { encoding: 'utf8', shell: true });
+            return result.status === 0;
+        } catch {
+            return false;
+        }
+    }
+
+    async run(opts: RunnerOptions): Promise<RunnerResult> {
+        const { prompt, workspaceDir, projectRoot } = opts;
+
+        // The workspace cwd is writable under acceptEdits; the project is re-granted
+        // read-only via settings.json. Bash is deliberately NOT allowed (write bypass).
+        if (projectRoot) {
+            writePermissions(workspaceDir, projectRoot);
+        }
+
+        const result = spawnSync(
+            'claude',
+            ['-p', prompt, '--permission-mode', 'acceptEdits', '--setting-sources', 'project'],
+            {
+                cwd: workspaceDir,
+                encoding: 'utf8',
+                shell: true,
+                maxBuffer: 10 * 1024 * 1024,
+            }
+        );
+
+        return {
+            exitCode: result.status ?? 1,
+            stdout: (result.stdout as string) ?? '',
+            stderr: (result.stderr as string) ?? '',
+        };
+    }
+}
+```
+
+- [ ] **Step 5: Run tests + typecheck**
+
+Run: `npx vitest run src/lib/runner/claude/__tests__/cli.test.ts && npm run typecheck`
+
+Expected: PASS, no type errors.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add src/lib/runner/types.ts src/lib/runner/claude/cli.ts src/lib/runner/claude/__tests__/cli.test.ts
+git commit -m "feat: spawn claude with acceptEdits + project read-only sandbox via projectRoot"
+```
+
+---
+
+### Task 3: Real `claude -p` sandbox integration test (the gate)
+
+Proves the *behavior* the unit tests can't: an in-workspace write succeeds and a project write is **blocked** — asserting **file state**, because a deny-rule block never appears in `permission_denials`. Auto-skips when `claude` is not installed, so normal CI is unaffected.
+
+**Files:**
+- Create: `src/lib/runner/claude/__tests__/sandbox.integration.test.ts`
+
+- [ ] **Step 1: Write the integration test**
+
+Create `src/lib/runner/claude/__tests__/sandbox.integration.test.ts`:
+
+```ts
+import { describe, it, expect } from 'vitest';
+import { mkdtempSync, mkdirSync, writeFileSync, existsSync, rmSync } from 'fs';
+import { join } from 'path';
+import { tmpdir } from 'os';
+import { ClaudeCliRunner } from '../cli.js';
+
+const runner = new ClaudeCliRunner();
+const claudeAvailable = runner.isAvailable();
+
+// Real claude -p calls — slow and cost money; auto-skipped when claude is absent.
+describe.skipIf(!claudeAvailable)('ClaudeCliRunner sandbox (real claude -p)', () => {
+  async function runScenario(projectRootDir: string): Promise<void> {
+    const projectRoot = mkdtempSync(join(tmpdir(), projectRootDir));
+    const workspaceDir = mkdtempSync(join(tmpdir(), 'csi-ws-'));
+    writeFileSync(join(projectRoot, 'CONTEXT.md'), '# context');
     try {
-      const result = spawnSync('claude', ['--version'], { encoding: 'utf8', shell: true });
-      return result.status === 0;
-    } catch {
-      return false;
+      const inside = await runner.run({
+        prompt: 'Use the Write tool to create a file named out.txt in the current working directory with the exact contents: OK',
+        workspaceDir,
+        projectRoot,
+      });
+      expect(inside.exitCode).toBe(0);
+      expect(existsSync(join(workspaceDir, 'out.txt'))).toBe(true); // in-workspace write allowed
+
+      const target = join(projectRoot, 'leak.txt');
+      await runner.run({
+        prompt: `Use the Write tool to create a file at the absolute path ${target} with the exact contents: LEAK`,
+        workspaceDir,
+        projectRoot,
+      });
+      expect(existsSync(target)).toBe(false); // project write blocked — file state is ground truth
+    } finally {
+      rmSync(projectRoot, { recursive: true, force: true });
+      rmSync(workspaceDir, { recursive: true, force: true });
     }
   }
 
-  async run(prompt: string, workspaceDir: string): Promise<RunnerResult> {
-    const result = spawnSync(
-      'claude',
-      ['-p', prompt, '--allowedTools', 'Read,Write'],
-      {
-        cwd: workspaceDir,
-        encoding: 'utf8',
-        shell: true,
-        maxBuffer: 10 * 1024 * 1024,
-      }
-    );
+  it('allows in-workspace writes and blocks project writes', async () => {
+    await runScenario('csi-proj-');
+  }, 180_000);
 
-    return {
-      exitCode: result.status ?? 1,
-      stdout: (result.stdout as string) ?? '',
-      stderr: (result.stderr as string) ?? '',
-    };
-  }
-}
+  it('holds when the project path contains a space', async () => {
+    await runScenario('csi proj '); // prefix with a space -> spaced project dir
+  }, 180_000);
+});
 ```
 
-- [X] **Step 4: Run tests to verify they pass**
+- [ ] **Step 2: Run the integration test**
 
-Run: `npm test`
+Run (only meaningful with `claude` installed): `npx vitest run src/lib/runner/claude/__tests__/sandbox.integration.test.ts`
 
-Expected: PASS — all 6 ClaudeCliRunner tests pass.
+Expected: PASS (both scenarios) when `claude` is available; SKIPPED otherwise. If it FAILS, stop — the sandbox is not functioning and no later task should be trusted.
 
-- [X] **Step 5: Commit**
+- [ ] **Step 3: Commit**
 
 ```bash
-git add src/lib/runner/claude-cli.ts src/lib/runner/__tests__/claude-cli.test.ts
-git commit -m "feat: implement ClaudeCliRunner using claude -p subprocess"
+git add src/lib/runner/claude/__tests__/sandbox.integration.test.ts
+git commit -m "test: real claude -p sandbox integration test (asserts file state)"
 ```
 
 ---
 
-### Task 3: Runner resolver
+### Task 4: Rework workspace manager (deterministic naming + orphan sweep)
 
 **Files:**
-- Create: `src/lib/runner/index.ts`
+- Rework: `src/lib/workspace.ts`
+- Rework: `src/lib/__tests__/workspace.test.ts`
 
-- [X] **Step 1: Write src/lib/runner/index.ts**
+- [ ] **Step 1: Replace the test file**
 
-```ts
-import type { Runner } from './types.js';
-import { ClaudeCliRunner } from './claude-cli.js';
-
-export type { Runner, RunnerResult } from './types.js';
-
-export function resolveRunner(): Runner | null {
-  const claude = new ClaudeCliRunner();
-  if (claude.isAvailable()) return claude;
-  return null;
-}
-```
-
-- [X] **Step 2: Commit**
-
-```bash
-git add src/lib/runner/index.ts
-git commit -m "feat: add resolveRunner() — returns ClaudeCliRunner or null"
-```
-
----
-
-### Task 4: Workspace manager
-
-**Files:**
-- Create: `src/lib/workspace.ts`
-- Create: `src/lib/__tests__/workspace.test.ts`
-
-- [ ] **Step 1: Write failing tests**
-
-Create `src/lib/__tests__/workspace.test.ts`:
+Overwrite `src/lib/__tests__/workspace.test.ts`:
 
 ```ts
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdirSync, rmSync, writeFileSync, existsSync, readFileSync } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
-import { createWorkspace, copyBack, cleanupWorkspace } from '../workspace.js';
+import { createWorkspace, copyBack, cleanupWorkspace, sweepOrphanWorkspaces } from '../workspace.js';
+
+const PROJECT_ROOT = join(tmpdir(), 'my-project');
+const CHANGE = 'add-auth';
+const PROPOSAL = 'proposal.md';
+const SPEC_NESTED = 'specs/auth/spec.md';
 
 describe('workspace', () => {
-    let artifactsDir: string;
+  let changeDir: string;
 
-    const PROPOSAL_MD = 'proposal.md';
-    const PROPOSAL_CONTENT = '# Proposal';
-    const DESIGN_MD = 'design.md';
-    const DESIGN_CONTENT = '# Design';
-    const AUTH_MD = 'auth.md';
-    const AUTH_CONTENT = '# Auth Spec';
-    const OPENSPEC_DIR = 'openspec';
-    const SPECS_DIR = 'specs';
-    const AUTH_MD_SUBDIR = `${OPENSPEC_DIR}/${SPECS_DIR}/${AUTH_MD}`;
+  beforeEach(() => {
+    changeDir = join(tmpdir(), `ws-src-${Date.now()}`);
+    mkdirSync(join(changeDir, 'specs', 'auth'), { recursive: true });
+    writeFileSync(join(changeDir, PROPOSAL), '# Proposal');
+    writeFileSync(join(changeDir, 'specs', 'auth', 'spec.md'), '# Auth Spec');
+  });
+  afterEach(() => {
+    rmSync(changeDir, { recursive: true, force: true });
+  });
 
-    beforeEach(() => {
-        artifactsDir = join(tmpdir(), `ws-test-${Date.now()}`);
-        mkdirSync(artifactsDir, { recursive: true });
-        writeFileSync(join(artifactsDir, PROPOSAL_MD), PROPOSAL_CONTENT);
-        writeFileSync(join(artifactsDir, DESIGN_MD), DESIGN_CONTENT);
-        mkdirSync(join(artifactsDir, OPENSPEC_DIR, SPECS_DIR), { recursive: true });
-        writeFileSync(join(artifactsDir, OPENSPEC_DIR, SPECS_DIR, AUTH_MD), AUTH_CONTENT);
-    });
-
-    afterEach(() => {
-        rmSync(artifactsDir, { recursive: true, force: true });
-    });
-
-    describe('createWorkspace', () => {
-       it('creates a temp workspace directory', () => {
-        const ws = createWorkspace('reviewer', 1, artifactsDir, [PROPOSAL_MD]);
+  describe('createWorkspace', () => {
+    it('creates a temp dir whose name encodes project base, change, role and round', () => {
+      const ws = createWorkspace(PROJECT_ROOT, CHANGE, 'proposer', 3, changeDir, []);
+      try {
         expect(existsSync(ws.dir)).toBe(true);
-        rmSync(ws.dir, { recursive: true, force: true });
-       });
-
-       it('copies flat files into workspace directory', () => {
-           const ws = createWorkspace('reviewer', 1, artifactsDir, [PROPOSAL_MD, DESIGN_MD]);
-           expect(readFileSync(join(ws.dir, PROPOSAL_MD), 'utf-8')).toBe(PROPOSAL_CONTENT);
-           expect(readFileSync(join(ws.dir, DESIGN_MD), 'utf-8')).toBe(DESIGN_CONTENT);
-           rmSync(ws.dir, { recursive: true, force: true });
-       });
-
-       it('preserves subdirectory structure for nested paths', () => {
-           const ws = createWorkspace('reviewer', 1, artifactsDir, [AUTH_MD_SUBDIR]);
-           expect(existsSync(join(ws.dir, OPENSPEC_DIR, SPECS_DIR, AUTH_MD))).toBe(true);
-           rmSync(ws.dir, { recursive: true, force: true });
-       });
-
-       it('skips files that do not exist in the artifacts directory', () => {
-           const ws = createWorkspace('reviewer', 1, artifactsDir, ['nonexistent.md']);
-           expect(existsSync(join(ws.dir, 'nonexistent.md'))).toBe(false);
-           rmSync(ws.dir, { recursive: true, force: true });
-       });
-
-        it('dir name contains the role and round', () => {
-            const ws = createWorkspace('proposer', 3, artifactsDir, []);
-            expect(ws.dir).toContain('proposer');
-            expect(ws.dir).toContain('3');
-            rmSync(ws.dir, { recursive: true, force: true });
-        });
+        expect(ws.dir).toContain('csi-opsx-my-project-');
+        expect(ws.dir).toContain('-add-auth-proposer-3');
+      } finally {
+        cleanupWorkspace(ws.dir);
+      }
     });
 
-    describe('copyBack', () => {
-        it('copies a file from workspace back to the artifacts directory', () => {
-            const REVIEW_FINDINGS_1 = 'review-findings-1.md'
-            const REVIEW_CONTENT = '---\nissues-found: 2\n---';
-            const ws = createWorkspace('reviewer', 1, artifactsDir, []);
-            writeFileSync(join(ws.dir, REVIEW_FINDINGS_1), REVIEW_CONTENT);
-            copyBack(ws.dir, artifactsDir, [REVIEW_FINDINGS_1]);
-            expect(readFileSync(join(artifactsDir, REVIEW_FINDINGS_1), 'utf-8')).toBe(REVIEW_CONTENT);
-            rmSync(ws.dir, { recursive: true, force: true });
-        });
-
-        it('preserves subdirectory structure when copying back', () => {
-            const UPDATED_AUTH_CONTENT = '# Updated Auth';
-            const ws = createWorkspace('reviewer', 1, artifactsDir, [AUTH_MD_SUBDIR]);
-            writeFileSync(join(ws.dir, AUTH_MD_SUBDIR), UPDATED_AUTH_CONTENT);
-            copyBack(ws.dir, artifactsDir, [AUTH_MD_SUBDIR]);
-            expect(readFileSync(join(artifactsDir, AUTH_MD_SUBDIR), 'utf-8')).toBe(UPDATED_AUTH_CONTENT);
-            rmSync(ws.dir, { recursive: true, force: true });
-        });
-
-        it('copies multiple files with mixed paths back to the artifacts directory', () => {
-            const UPDATED_PROPOSAL_CONTENT = '# Updated Proposal';
-            const UPDATED_AUTH_CONTENT = '# Updated Auth';
-            const ws = createWorkspace('reviewer', 1, artifactsDir, [PROPOSAL_MD, AUTH_MD_SUBDIR]);
-            writeFileSync(join(ws.dir, PROPOSAL_MD), UPDATED_PROPOSAL_CONTENT);
-            writeFileSync(join(ws.dir, AUTH_MD_SUBDIR), UPDATED_AUTH_CONTENT);
-            copyBack(ws.dir, artifactsDir, [PROPOSAL_MD, AUTH_MD_SUBDIR]);
-            expect(readFileSync(join(artifactsDir, PROPOSAL_MD), 'utf-8')).toBe(UPDATED_PROPOSAL_CONTENT);
-            expect(readFileSync(join(artifactsDir, AUTH_MD_SUBDIR), 'utf-8')).toBe(UPDATED_AUTH_CONTENT);
-            rmSync(ws.dir, { recursive: true, force: true });
-        });
+    it('is deterministic for the same project/change/role/round', () => {
+      const a = createWorkspace(PROJECT_ROOT, CHANGE, 'reviewer', 1, changeDir, []);
+      const b = createWorkspace(PROJECT_ROOT, CHANGE, 'reviewer', 1, changeDir, []);
+      try { expect(a.dir).toBe(b.dir); } finally { cleanupWorkspace(a.dir); }
     });
 
-    describe('cleanupWorkspace', () => {
-        it('removes the workspace directory', () => {
-            const ws = createWorkspace('reviewer', 1, artifactsDir, []);
-            cleanupWorkspace(ws.dir);
-            expect(existsSync(ws.dir)).toBe(false);
-        });
-
-        it('does not throw if workspace does not exist', () => {
-            expect(() => cleanupWorkspace('/tmp/nonexistent-csi-opsx-xyz')).not.toThrow();
-        });
+    it('copies flat and nested files, preserving structure', () => {
+      const ws = createWorkspace(PROJECT_ROOT, CHANGE, 'proposer', 1, changeDir, [PROPOSAL, SPEC_NESTED]);
+      try {
+        expect(readFileSync(join(ws.dir, PROPOSAL), 'utf8')).toBe('# Proposal');
+        expect(existsSync(join(ws.dir, 'specs', 'auth', 'spec.md'))).toBe(true);
+      } finally {
+        cleanupWorkspace(ws.dir);
+      }
     });
+
+    it('skips files absent from the source dir', () => {
+      const ws = createWorkspace(PROJECT_ROOT, CHANGE, 'reviewer', 1, changeDir, ['nope.md']);
+      try { expect(existsSync(join(ws.dir, 'nope.md'))).toBe(false); } finally { cleanupWorkspace(ws.dir); }
+    });
+  });
+
+  describe('copyBack', () => {
+    it('copies files (incl. nested) from workspace back to the change dir', () => {
+      const ws = createWorkspace(PROJECT_ROOT, CHANGE, 'proposer', 1, changeDir, [PROPOSAL, SPEC_NESTED]);
+      try {
+        writeFileSync(join(ws.dir, PROPOSAL), '# Updated');
+        writeFileSync(join(ws.dir, SPEC_NESTED), '# Updated Spec');
+        copyBack(ws.dir, changeDir, [PROPOSAL, SPEC_NESTED]);
+        expect(readFileSync(join(changeDir, PROPOSAL), 'utf8')).toBe('# Updated');
+        expect(readFileSync(join(changeDir, SPEC_NESTED), 'utf8')).toBe('# Updated Spec');
+      } finally {
+        cleanupWorkspace(ws.dir);
+      }
+    });
+  });
+
+  describe('cleanupWorkspace', () => {
+    it('removes the workspace dir and does not throw if it is absent', () => {
+      const ws = createWorkspace(PROJECT_ROOT, CHANGE, 'reviewer', 1, changeDir, []);
+      cleanupWorkspace(ws.dir);
+      expect(existsSync(ws.dir)).toBe(false);
+      expect(() => cleanupWorkspace(ws.dir)).not.toThrow();
+    });
+  });
+
+  describe('sweepOrphanWorkspaces', () => {
+    it('removes leftover dirs for this project+change but leaves other changes alone', () => {
+      const mine = createWorkspace(PROJECT_ROOT, CHANGE, 'reviewer', 1, changeDir, []);
+      const other = createWorkspace(PROJECT_ROOT, 'other-change', 'reviewer', 1, changeDir, []);
+      try {
+        sweepOrphanWorkspaces(PROJECT_ROOT, CHANGE);
+        expect(existsSync(mine.dir)).toBe(false);
+        expect(existsSync(other.dir)).toBe(true);
+      } finally {
+        cleanupWorkspace(other.dir);
+      }
+    });
+  });
 });
 ```
 
-- [X] **Step 2: Run tests to verify they fail**
+- [ ] **Step 2: Run tests to verify they fail**
 
-Run: `npm test`
+Run: `npx vitest run src/lib/__tests__/workspace.test.ts`
 
-Expected: FAIL — `Cannot find module '../workspace.js'`
+Expected: FAIL — `createWorkspace` has the old `(role, round, …)` signature and `sweepOrphanWorkspaces` does not exist.
 
-- [X] **Step 3: Implement src/lib/workspace.ts**
+- [ ] **Step 3: Replace src/lib/workspace.ts**
 
 ```ts
-import { mkdirSync, copyFileSync, existsSync, rmSync } from 'fs';
-import { join, dirname } from 'path';
+import { mkdirSync, copyFileSync, existsSync, rmSync, readdirSync } from 'fs';
+import { join, dirname, basename } from 'path';
 import { tmpdir } from 'os';
+import { createHash } from 'crypto';
 import type { AgentRole } from './types.js';
 
 export interface Workspace {
     dir: string;
 }
 
+// Deterministic prefix shared by every temp dir for one (project, change).
+// pathHash disambiguates two same-named checkouts that share the OS temp namespace.
+function workspacePrefix(projectRoot: string, changeName: string): string {
+    const base = basename(projectRoot);
+    const normalized = process.platform === 'win32' ? projectRoot.toLowerCase() : projectRoot;
+    const hash = createHash('sha256').update(normalized).digest('hex').slice(0, 8);
+    return `csi-opsx-${base}-${hash}-${changeName}`;
+}
+
 export function createWorkspace(
+    projectRoot: string,
+    changeName: string,
     role: AgentRole,
     round: number,
     artifactsDir: string,
     relativeFiles: string[]
 ): Workspace {
-    const workspaceDir = join(tmpdir(), `csi-opsx-${role}-${round}-${Date.now()}`);
-    mkdirSync(workspaceDir, { recursive: true });
+    const dir = join(tmpdir(), `${workspacePrefix(projectRoot, changeName)}-${role}-${round}`);
+    // Deterministic name: remove any stale dir from a prior crashed run before recreating.
+    if (existsSync(dir)) rmSync(dir, { recursive: true, force: true });
+    mkdirSync(dir, { recursive: true });
 
     for (const relFile of relativeFiles) {
         const src = join(artifactsDir, relFile);
         if (existsSync(src)) {
-            const dest = join(workspaceDir, relFile);
+            const dest = join(dir, relFile);
             mkdirSync(dirname(dest), { recursive: true });
             copyFileSync(src, dest);
         }
     }
 
-    return { dir: workspaceDir };
+    return { dir };
 }
 
+// Copies files in list order — callers that need atomicity put the commit-marker file last.
 export function copyBack(workspaceDir: string, artifactsDir: string, relativeFiles: string[]): void {
     for (const relFile of relativeFiles) {
         const src = join(workspaceDir, relFile);
@@ -407,203 +623,200 @@ export function cleanupWorkspace(workspaceDir: string): void {
         rmSync(workspaceDir, { recursive: true, force: true });
     }
 }
+
+// Remove orphaned temp dirs from prior crashed runs — scoped to this (project, change)
+// prefix only, so a concurrent run on a different change/project is never touched.
+export function sweepOrphanWorkspaces(projectRoot: string, changeName: string): void {
+    const prefix = workspacePrefix(projectRoot, changeName);
+    const base = tmpdir();
+    for (const entry of readdirSync(base)) {
+        if (entry.startsWith(prefix)) {
+            rmSync(join(base, entry), { recursive: true, force: true });
+        }
+    }
+}
 ```
 
-- [X] **Step 4: Run tests to verify they pass**
+- [ ] **Step 4: Run tests + typecheck**
 
-Run: `npm test`
+Run: `npx vitest run src/lib/__tests__/workspace.test.ts && npm run typecheck`
 
-Expected: PASS — all 10 workspace tests pass.
+Expected: PASS, no type errors.
 
 - [ ] **Step 5: Commit**
 
 ```bash
 git add src/lib/workspace.ts src/lib/__tests__/workspace.test.ts
-git commit -m "feat: implement workspace manager for temp agent directories"
+git commit -m "feat: deterministic per-change workspace naming + scoped orphan sweep"
 ```
 
 ---
 
-### Task 5: Permissions builder
+### Task 5: Finish loop controller parsers (frontmatter-anchored)
+
+The two parsers must read **only the frontmatter block** so a body `is-solved:` line or stray "status:" text in an issue description can never be mistaken for the file-level fields. `findLatestFindingsRound` and `getFindingsPath` are currently empty stubs.
 
 **Files:**
-- Create: `src/lib/permissions.ts`
-- Create: `src/lib/__tests__/permissions.test.ts`
+- Finish: `src/lib/loop.ts`
+- Modify: `src/lib/__tests__/loop.test.ts`
 
-- [ ] **Step 1: Write failing tests**
+- [ ] **Step 1: Add anchoring tests to the existing test file**
 
-Create `src/lib/__tests__/permissions.test.ts`:
+Append these tests inside the existing `describe('loop', …)` in `src/lib/__tests__/loop.test.ts`:
 
 ```ts
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdirSync, rmSync, existsSync, readFileSync } from 'fs';
-import { join } from 'path';
-import { tmpdir } from 'os';
-import { writePermissions } from '../permissions.js';
+  describe('frontmatter anchoring', () => {
+    const WITH_BODY = [
+      '---', 'issues-found: 2', 'round: 1', 'status: open', '---', '',
+      '## Issue 1: title', 'is-solved: false', 'The doc says status: addressed somewhere.', '',
+    ].join('\n');
 
-describe('permissions', () => {
-  let tmpDir: string;
+    it('parseStatus reads the frontmatter status, ignoring body text', () => {
+      expect(parseStatus(WITH_BODY)).toBe('open');
+    });
 
-  beforeEach(() => {
-    tmpDir = join(tmpdir(), `perms-test-${Date.now()}`);
-    mkdirSync(tmpDir, { recursive: true });
+    it('parseIssuesFound reads the frontmatter count, ignoring body text', () => {
+      expect(parseIssuesFound(WITH_BODY)).toBe(2);
+    });
   });
-
-  afterEach(() => {
-    rmSync(tmpDir, { recursive: true, force: true });
-  });
-
-  it('creates .claude/settings.json', () => {
-    writePermissions(tmpDir, ['review-findings-1.md']);
-    expect(existsSync(join(tmpDir, '.claude', 'settings.json'))).toBe(true);
-  });
-
-  it('includes Write() allow entries for each writable file', () => {
-    writePermissions(tmpDir, ['proposal.md', 'design.md']);
-    const settings = JSON.parse(readFileSync(join(tmpDir, '.claude', 'settings.json'), 'utf8'));
-    expect(settings.permissions.allow).toContain('Write(proposal.md)');
-    expect(settings.permissions.allow).toContain('Write(design.md)');
-  });
-
-  it('includes Write(*) in deny', () => {
-    writePermissions(tmpDir, ['review-findings-1.md']);
-    const settings = JSON.parse(readFileSync(join(tmpDir, '.claude', 'settings.json'), 'utf8'));
-    expect(settings.permissions.deny).toContain('Write(*)');
-  });
-
-  it('allow list has exactly as many entries as writable files', () => {
-    writePermissions(tmpDir, ['proposal.md', 'design.md', 'tasks.md']);
-    const settings = JSON.parse(readFileSync(join(tmpDir, '.claude', 'settings.json'), 'utf8'));
-    expect(settings.permissions.allow).toHaveLength(3);
-  });
-});
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [ ] **Step 2: Run tests to verify the current state fails**
 
-Run: `npm test`
+Run: `npx vitest run src/lib/__tests__/loop.test.ts`
 
-Expected: FAIL — `Cannot find module '../permissions.js'`
+Expected: FAIL — `findLatestFindingsRound`/`getFindingsPath` are empty (return `undefined`), so the pre-existing tests for them fail; the new anchoring tests may pass by luck but the file is incomplete.
 
-- [ ] **Step 3: Implement src/lib/permissions.ts**
+- [ ] **Step 3: Replace src/lib/loop.ts**
 
 ```ts
-import { mkdirSync, writeFileSync } from 'fs';
+import { readdirSync, existsSync } from 'fs';
 import { join } from 'path';
 
-export function writePermissions(workspaceDir: string, writableRelativePaths: string[]): void {
-  const settingsDir = join(workspaceDir, '.claude');
-  mkdirSync(settingsDir, { recursive: true });
+export type FindingsStatus = 'open' | 'addressed';
 
-  const settings = {
-    permissions: {
-      allow: writableRelativePaths.map((f) => `Write(${f})`),
-      deny: ['Write(*)'],
-    },
-  };
+// Extract the YAML-ish frontmatter block (between the first pair of --- fences).
+function frontmatter(content: string): string {
+    const m = content.match(/^---\s*\n([\s\S]*?)\n---/);
+    return m ? m[1] : '';
+}
 
-  writeFileSync(join(settingsDir, 'settings.json'), JSON.stringify(settings, null, 2));
+export function parseIssuesFound(content: string): number {
+    const match = frontmatter(content).match(/^issues-found:\s*(\d+)\s*$/m);
+    if (!match) throw new Error('Missing issues-found field in findings frontmatter');
+    return parseInt(match[1], 10);
+}
+
+export function parseStatus(content: string): FindingsStatus {
+    const match = frontmatter(content).match(/^status:\s*(open|addressed)\s*$/m);
+    if (!match) throw new Error('Missing status field in findings frontmatter');
+    return match[1] as FindingsStatus;
+}
+
+export function findLatestFindingsRound(artifactsDir: string): number {
+    if (!existsSync(artifactsDir)) return 0;
+    const rounds = readdirSync(artifactsDir)
+        .map((f) => f.match(/^review-findings-(\d+)\.md$/))
+        .filter((m): m is RegExpMatchArray => m !== null)
+        .map((m) => parseInt(m[1], 10));
+    return rounds.length === 0 ? 0 : Math.max(...rounds);
+}
+
+export function getFindingsPath(artifactsDir: string, round: number): string {
+    return join(artifactsDir, `review-findings-${round}.md`);
 }
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [ ] **Step 4: Run tests + typecheck**
 
-Run: `npm test`
+Run: `npx vitest run src/lib/__tests__/loop.test.ts && npm run typecheck`
 
-Expected: PASS — all 4 permissions tests pass.
+Expected: PASS — all loop tests (existing + anchoring) pass.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/lib/permissions.ts src/lib/__tests__/permissions.test.ts
-git commit -m "feat: implement permissions builder for workspace settings.json"
+git add src/lib/loop.ts src/lib/__tests__/loop.test.ts
+git commit -m "feat: finish loop parsers; anchor issues-found/status to frontmatter"
 ```
 
 ---
 
-### Task 6: Loop controller parsers
+### Task 6: Artifact enumeration + change-name validation
 
 **Files:**
-- Create: `src/lib/loop.ts`
-- Create: `src/lib/__tests__/loop.test.ts`
+- Create: `src/lib/artifacts.ts`
+- Create: `src/lib/__tests__/artifacts.test.ts`
 
 - [ ] **Step 1: Write failing tests**
 
-Create `src/lib/__tests__/loop.test.ts`:
+Create `src/lib/__tests__/artifacts.test.ts`:
 
 ```ts
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdirSync, rmSync, writeFileSync } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
-import {
-  parseIssuesFound,
-  parseStatus,
-  findLatestFindingsRound,
-  getFindingsPath,
-} from '../loop.js';
+import { validateChangeName, getChangeDir, enumerateChangeArtifacts } from '../artifacts.js';
 
-describe('loop', () => {
-  let tmpDir: string;
+const CHANGE = 'add-auth';
+
+describe('artifacts', () => {
+  let projectRoot: string;
+  let changeDir: string;
 
   beforeEach(() => {
-    tmpDir = join(tmpdir(), `loop-test-${Date.now()}`);
-    mkdirSync(tmpDir, { recursive: true });
+    projectRoot = join(tmpdir(), `proj-${Date.now()}`);
+    changeDir = join(projectRoot, 'openspec', 'changes', CHANGE);
+    mkdirSync(changeDir, { recursive: true });
   });
-
   afterEach(() => {
-    rmSync(tmpDir, { recursive: true, force: true });
+    rmSync(projectRoot, { recursive: true, force: true });
   });
 
-  describe('parseIssuesFound', () => {
-    it('returns the integer from issues-found field', () => {
-      expect(parseIssuesFound('---\nissues-found: 3\nstatus: open\n---\n')).toBe(3);
+  describe('validateChangeName', () => {
+    it('accepts normal names', () => {
+      expect(() => validateChangeName('add-auth_v2.1')).not.toThrow();
     });
-
-    it('returns 0 when issues-found is 0', () => {
-      expect(parseIssuesFound('---\nissues-found: 0\nstatus: open\n---\n')).toBe(0);
-    });
-
-    it('throws when issues-found field is absent', () => {
-      expect(() => parseIssuesFound('---\nstatus: open\n---')).toThrow('Missing issues-found');
+    it('rejects traversal and separators', () => {
+      for (const bad of ['..', '.', 'a/b', 'a\\b', '../x', '']) {
+        expect(() => validateChangeName(bad)).toThrow();
+      }
     });
   });
 
-  describe('parseStatus', () => {
-    it('returns open when status is open', () => {
-      expect(parseStatus('---\nissues-found: 2\nstatus: open\n---')).toBe('open');
+  describe('getChangeDir', () => {
+    it('builds the change dir under openspec/changes', () => {
+      expect(getChangeDir(projectRoot, CHANGE)).toBe(changeDir);
     });
-
-    it('returns addressed when status is addressed', () => {
-      expect(parseStatus('---\nissues-found: 2\nstatus: addressed\n---')).toBe('addressed');
-    });
-
-    it('throws when status field is absent', () => {
-      expect(() => parseStatus('---\nissues-found: 2\n---')).toThrow('Missing status');
+    it('validates the name before building a path', () => {
+      expect(() => getChangeDir(projectRoot, '..')).toThrow();
     });
   });
 
-  describe('findLatestFindingsRound', () => {
-    it('returns 0 when no review-findings-*.md files exist', () => {
-      expect(findLatestFindingsRound(tmpDir)).toBe(0);
+  describe('enumerateChangeArtifacts', () => {
+    it('returns only the known artifact files that exist', () => {
+      writeFileSync(join(changeDir, 'proposal.md'), 'x');
+      writeFileSync(join(changeDir, 'tasks.md'), 'x'); // design.md intentionally absent
+      expect(enumerateChangeArtifacts(projectRoot, CHANGE).sort()).toEqual(['proposal.md', 'tasks.md']);
     });
 
-    it('returns highest round number present', () => {
-      writeFileSync(join(tmpDir, 'review-findings-1.md'), '---\nissues-found: 2\nstatus: addressed\n---');
-      writeFileSync(join(tmpDir, 'review-findings-2.md'), '---\nissues-found: 1\nstatus: open\n---');
-      expect(findLatestFindingsRound(tmpDir)).toBe(2);
+    it('includes nested specs/**/spec.md with forward slashes', () => {
+      writeFileSync(join(changeDir, 'proposal.md'), 'x');
+      mkdirSync(join(changeDir, 'specs', 'auth'), { recursive: true });
+      writeFileSync(join(changeDir, 'specs', 'auth', 'spec.md'), 'x');
+      expect(enumerateChangeArtifacts(projectRoot, CHANGE).sort()).toEqual(['proposal.md', 'specs/auth/spec.md']);
     });
 
-    it('ignores files that do not match the pattern', () => {
-      writeFileSync(join(tmpDir, 'proposal.md'), '# proposal');
-      writeFileSync(join(tmpDir, 'review-findings-1.md'), '---\nissues-found: 0\nstatus: open\n---');
-      expect(findLatestFindingsRound(tmpDir)).toBe(1);
+    it('excludes .openspec.yaml and review-findings files', () => {
+      writeFileSync(join(changeDir, 'proposal.md'), 'x');
+      writeFileSync(join(changeDir, '.openspec.yaml'), 'x');
+      writeFileSync(join(changeDir, 'review-findings-1.md'), 'x');
+      expect(enumerateChangeArtifacts(projectRoot, CHANGE)).toEqual(['proposal.md']);
     });
-  });
 
-  describe('getFindingsPath', () => {
-    it('returns review-findings-N.md in the artifacts directory', () => {
-      expect(getFindingsPath('/tmp/project', 2)).toBe(join('/tmp/project', 'review-findings-2.md'));
+    it('throws when the change folder does not exist', () => {
+      expect(() => enumerateChangeArtifacts(projectRoot, 'no-such-change')).toThrow();
     });
   });
 });
@@ -611,60 +824,79 @@ describe('loop', () => {
 
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `npm test`
+Run: `npx vitest run src/lib/__tests__/artifacts.test.ts`
 
-Expected: FAIL — `Cannot find module '../loop.js'`
+Expected: FAIL — `Cannot find module '../artifacts.js'`.
 
-- [ ] **Step 3: Implement src/lib/loop.ts**
+- [ ] **Step 3: Implement src/lib/artifacts.ts**
 
 ```ts
-import { readdirSync, readFileSync, existsSync } from 'fs';
+import { existsSync, readdirSync, statSync } from 'fs';
 import { join } from 'path';
 
-export type FindingsStatus = 'open' | 'addressed';
+const KNOWN_FILES = ['proposal.md', 'design.md', 'tasks.md'];
 
-export function parseIssuesFound(content: string): number {
-  const match = content.match(/^issues-found:\s*(\d+)/m);
-  if (!match) throw new Error('Missing issues-found field in findings file');
-  return parseInt(match[1], 10);
+// A change name must be a single safe path segment — rejected BEFORE any path is built,
+// so `--change ..` can never escape openspec/changes/.
+export function validateChangeName(name: string): void {
+    if (name === '.' || name === '..' || !/^[A-Za-z0-9._-]+$/.test(name)) {
+        throw new Error(`Invalid change name: ${JSON.stringify(name)}`);
+    }
 }
 
-export function parseStatus(content: string): FindingsStatus {
-  const match = content.match(/^status:\s*(open|addressed)/m);
-  if (!match) throw new Error('Missing status field in findings file');
-  return match[1] as FindingsStatus;
+export function getChangeDir(projectRoot: string, changeName: string): string {
+    validateChangeName(changeName);
+    return join(projectRoot, 'openspec', 'changes', changeName);
 }
 
-export function findLatestFindingsRound(artifactsDir: string): number {
-  if (!existsSync(artifactsDir)) return 0;
-  const rounds = readdirSync(artifactsDir)
-    .map((f) => f.match(/^review-findings-(\d+)\.md$/))
-    .filter((m): m is RegExpMatchArray => m !== null)
-    .map((m) => parseInt(m[1], 10));
-  return rounds.length === 0 ? 0 : Math.max(...rounds);
+// Returns artifact paths RELATIVE to the change dir, forward-slashed.
+// Deterministic: same folder in -> same list out, no model in the loop.
+export function enumerateChangeArtifacts(projectRoot: string, changeName: string): string[] {
+    const changeDir = getChangeDir(projectRoot, changeName);
+    if (!existsSync(changeDir)) {
+        throw new Error(`Change folder not found: openspec/changes/${changeName}`);
+    }
+
+    const found: string[] = [];
+    for (const f of KNOWN_FILES) {
+        if (existsSync(join(changeDir, f))) found.push(f);
+    }
+    const specsDir = join(changeDir, 'specs');
+    if (existsSync(specsDir)) collectSpecs(specsDir, 'specs', found);
+    return found;
 }
 
-export function getFindingsPath(artifactsDir: string, round: number): string {
-  return join(artifactsDir, `review-findings-${round}.md`);
+function collectSpecs(absDir: string, relDir: string, out: string[]): void {
+    for (const entry of readdirSync(absDir)) {
+        const abs = join(absDir, entry);
+        const rel = `${relDir}/${entry}`;
+        if (statSync(abs).isDirectory()) {
+            collectSpecs(abs, rel, out);
+        } else if (entry === 'spec.md') {
+            out.push(rel);
+        }
+    }
 }
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [ ] **Step 4: Run tests + typecheck**
 
-Run: `npm test`
+Run: `npx vitest run src/lib/__tests__/artifacts.test.ts && npm run typecheck`
 
-Expected: PASS — all 10 loop tests pass.
+Expected: PASS, no type errors.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/lib/loop.ts src/lib/__tests__/loop.test.ts
-git commit -m "feat: implement loop controller parsers for findings files"
+git add src/lib/artifacts.ts src/lib/__tests__/artifacts.test.ts
+git commit -m "feat: change-folder artifact enumeration + change-name validation"
 ```
 
 ---
 
-### Task 7: Agent configs
+### Task 7: Agent prompt builders
+
+The reviewer reads artifacts + context **in place** (it cannot write them) and writes `review-findings-N.md` into its **working directory**. The proposer edits the **copies** in its working directory and owns the `status` flip + per-issue `is-solved`.
 
 **Files:**
 - Create: `src/commands/propose/agents.ts`
@@ -674,349 +906,573 @@ git commit -m "feat: implement loop controller parsers for findings files"
 ```ts
 import type { AgentRole } from '../../lib/types.js';
 
+export interface PromptArgs {
+    projectRoot: string;       // read-only context root (absolute)
+    changeDir: string;         // <projectRoot>/openspec/changes/<name> (absolute)
+    artifactRelPaths: string[]; // artifact paths relative to changeDir
+    round: number;
+}
+
 export interface AgentConfig {
-  role: AgentRole;
-  buildPrompt(artifactsDir: string, artifactRelPaths: string[], round: number): string;
+    role: AgentRole;
+    buildPrompt(args: PromptArgs): string;
+}
+
+function contextBlock(projectRoot: string): string {
+    return [
+        `Read these for project context (READ-ONLY — you cannot and must not modify them):`,
+        `- ${projectRoot}/CLAUDE.md (project conventions, if present)`,
+        `- ${projectRoot}/openspec/ (existing specs and schemas)`,
+        `- ${projectRoot}/docs/ (ADRs and other docs, if present)`,
+    ].join('\n');
 }
 
 export const ReviewerAgent: AgentConfig = {
-  role: 'reviewer',
-  buildPrompt(artifactsDir, artifactRelPaths, round) {
-    return `You are a thorough technical reviewer.
+    role: 'reviewer',
+    buildPrompt({ projectRoot, changeDir, artifactRelPaths, round }) {
+        const artifactList = artifactRelPaths.map((a) => `- ${changeDir}/${a}`).join('\n');
+        const prior =
+            round > 1
+                ? `\nAlso read ${changeDir}/review-findings-${round - 1}.md and verify each prior issue was actually addressed.\n`
+                : '';
+        return `You are a thorough technical reviewer.
 
-Your working directory contains these artifact files to review:
-${artifactRelPaths.map((a) => `- ${a}`).join('\n')}
+Read these artifact files (READ-ONLY — review them, do not modify them):
+${artifactList}
 
-Read each artifact file. Also read the following for project context (read-only, do not modify):
-- ${artifactsDir}/CLAUDE.md (project conventions, if it exists)
-- ${artifactsDir}/openspec/ (specs and schemas)
-- ${artifactsDir}/docs/ (ADRs and other docs)
-${round > 1 ? `- review-findings-${round - 1}.md (previous round findings — verify each was addressed)` : ''}
+${contextBlock(projectRoot)}
+${prior}
+Review the artifacts for: inconsistencies between artifacts, missing edge cases or error
+handling, ambiguous or contradictory requirements, and violations of the project conventions.
 
-Review the artifacts for:
-1. Inconsistencies between artifacts (e.g. proposal says X but design says Y)
-2. Missing edge cases or error handling
-3. Ambiguous or contradictory requirements
-4. Violations of project conventions from CLAUDE.md
+Write your findings to a NEW file named "review-findings-${round}.md" in your CURRENT WORKING
+DIRECTORY (not in the project, not in the change folder). Use exactly this format:
 
-Write your findings to: review-findings-${round}.md
-
-Use this exact frontmatter format:
 ---
-issues-found: <integer — number of issues found, 0 if none>
+issues-found: <integer; 0 if none>
 round: ${round}
 status: open
 ---
 
-## Issue 1: [short title]
-[description of the issue and which artifact it appears in]
+## Issue 1: <short title>
+is-solved: false
+<description, naming which artifact it appears in>
 
-If no issues are found, write issues-found: 0 and include no issue sections.`;
-  },
+Repeat the "## Issue N" block for every issue, each starting with "is-solved: false".
+If there are no issues, write "issues-found: 0" and include no issue sections.`;
+    },
 };
 
 export const ProposerAgent: AgentConfig = {
-  role: 'proposer',
-  buildPrompt(artifactsDir, artifactRelPaths, round) {
-    return `You are an expert technical writer and software architect.
+    role: 'proposer',
+    buildPrompt({ projectRoot, artifactRelPaths, round }) {
+        const artifactList = artifactRelPaths.map((a) => `- ${a}`).join('\n');
+        return `You are an expert technical writer and software architect.
 
-Your working directory contains these artifact files that need revision:
-${artifactRelPaths.map((a) => `- ${a}`).join('\n')}
+Your CURRENT WORKING DIRECTORY contains writable copies of the artifacts to revise:
+${artifactList}
 
-It also contains the reviewer's findings:
-- review-findings-${round}.md
+It also contains the reviewer's findings: review-findings-${round}.md
 
-Read the project context from (read-only, do not modify):
-- ${artifactsDir}/CLAUDE.md (project conventions, if it exists)
-- ${artifactsDir}/openspec/ (specs and schemas)
-- ${artifactsDir}/docs/ (ADRs and other docs)
+${contextBlock(projectRoot)}
 
-Address every issue listed in review-findings-${round}.md. Update the relevant artifact files.
+Address every issue in review-findings-${round}.md whose "is-solved" is false, by editing the
+artifact copies in your working directory.
 
-After addressing all issues, update review-findings-${round}.md:
-- Change the \`status\` field from \`open\` to \`addressed\`
-- Do not change issues-found or issue descriptions
+Then update review-findings-${round}.md in your working directory:
+- For each issue you fixed, change its "is-solved: false" to "is-solved: true".
+- Under each issue add a line: "**Resolution (proposer):** <what you changed, or why you did not fix it>".
+- When your pass is complete, change the frontmatter "status: open" to "status: addressed".
+- Do NOT change "issues-found", and do NOT alter the reviewer's issue titles or descriptions.
 
-Only write to artifact files and review-findings-${round}.md. Do not create or modify any other files.`;
-  },
+Only edit files inside your working directory. Do not create or modify any other files.`;
+    },
 };
 ```
 
-- [ ] **Step 2: Commit**
-
-```bash
-git add src/commands/propose/agents.ts
-git commit -m "feat: add ReviewerAgent and ProposerAgent prompt builders"
-```
-
----
-
-### Task 8: Harness orchestration
-
-**Files:**
-- Modify: `src/commands/propose/harness.ts` (replace stub)
-
-- [ ] **Step 1: Replace the stub with the full implementation**
-
-Overwrite `src/commands/propose/harness.ts`:
-
-```ts
-import { readFileSync, existsSync } from 'fs';
-import { basename } from 'path';
-import { resolveRunner } from '../../lib/runner/index.js';
-import { createWorkspace, copyBack, cleanupWorkspace } from '../../lib/workspace.js';
-import { writePermissions } from '../../lib/permissions.js';
-import {
-  parseIssuesFound,
-  parseStatus,
-  findLatestFindingsRound,
-  getFindingsPath,
-} from '../../lib/loop.js';
-import { ReviewerAgent, ProposerAgent } from './agents.js';
-
-export interface HarnessOptions {
-  workspace: string;
-  artifacts: string[];
-}
-
-const MAX_ROUNDS = 5;
-
-export async function runProposeHarness(opts: HarnessOptions): Promise<void> {
-  const { workspace, artifacts } = opts;
-
-  const runner = resolveRunner();
-  if (!runner) {
-    console.log([
-      '⚠ csi-opsx: No runner available.',
-      '  Automated review loop unavailable.',
-      '  Install Claude Code to enable the automated review loop.',
-    ].join('\n'));
-    return;
-  }
-
-  // Resumability: determine which round to start on
-  let round = findLatestFindingsRound(workspace);
-  if (round > 0) {
-    const existing = readFileSync(getFindingsPath(workspace, round), 'utf8');
-    const status = parseStatus(existing);
-    const issuesFound = parseIssuesFound(existing);
-
-    if (status === 'open' && issuesFound === 0) {
-      printSummary(workspace, round, artifacts);
-      return;
-    }
-    if (status === 'addressed') {
-      round = round + 1; // reviewer needs to run for next round
-    }
-    // else: status=open, issues>0 → proposer needs to run for same round
-    // but since we always run reviewer first per round, we start proposer below
-  } else {
-    round = 1;
-  }
-
-  while (round <= MAX_ROUNDS) {
-    // --- Reviewer run ---
-    const prevFindingsFile = round > 1 ? `review-findings-${round - 1}.md` : null;
-    const reviewerFiles = [
-      ...artifacts,
-      ...(prevFindingsFile ? [prevFindingsFile] : []),
-    ];
-
-    const reviewerWs = createWorkspace('reviewer', round, workspace, reviewerFiles);
-    writePermissions(reviewerWs.dir, [`review-findings-${round}.md`]);
-
-    console.log(`  Round ${round}: reviewer running...`);
-    const reviewerResult = await runner.run(
-      ReviewerAgent.buildPrompt(workspace, artifacts, round),
-      reviewerWs.dir
-    );
-    copyBack(reviewerWs.dir, workspace, [`review-findings-${round}.md`]);
-    cleanupWorkspace(reviewerWs.dir);
-
-    if (reviewerResult.exitCode !== 0) {
-      console.error(`Reviewer failed (round ${round}):\n${reviewerResult.stderr}`);
-      process.exit(1);
-    }
-
-    const findingsPath = getFindingsPath(workspace, round);
-    if (!existsSync(findingsPath)) {
-      console.error(`Reviewer did not write review-findings-${round}.md`);
-      process.exit(1);
-    }
-
-    const findingsContent = readFileSync(findingsPath, 'utf8');
-    const issuesFound = parseIssuesFound(findingsContent);
-
-    if (issuesFound === 0) {
-      printSummary(workspace, round, artifacts);
-      return;
-    }
-
-    // --- Proposer run ---
-    const proposerFiles = [...artifacts, `review-findings-${round}.md`];
-    const proposerWs = createWorkspace('proposer', round, workspace, proposerFiles);
-    writePermissions(proposerWs.dir, proposerFiles);
-
-    console.log(`  Round ${round}: proposer running (${issuesFound} issue${issuesFound === 1 ? '' : 's'} to address)...`);
-    const proposerResult = await runner.run(
-      ProposerAgent.buildPrompt(workspace, artifacts, round),
-      proposerWs.dir
-    );
-    copyBack(proposerWs.dir, workspace, proposerFiles);
-    cleanupWorkspace(proposerWs.dir);
-
-    if (proposerResult.exitCode !== 0) {
-      console.error(`Proposer failed (round ${round}):\n${proposerResult.stderr}`);
-      process.exit(1);
-    }
-
-    round++;
-  }
-
-  console.log(`⚠ csi-opsx propose: reached max rounds (${MAX_ROUNDS}). Review artifacts manually.`);
-}
-
-function printSummary(workspace: string, rounds: number, artifacts: string[]): void {
-  const findingFiles = Array.from({ length: rounds }, (_, i) => `review-findings-${i + 1}.md`);
-  console.log([
-    '✓ csi-opsx propose complete',
-    `  Rounds: ${rounds}`,
-    '  Final review: 0 issues found',
-    `  Artifacts: ${artifacts.join(', ')}`,
-    `  Review history: ${findingFiles.join(', ')}`,
-  ].join('\n'));
-}
-```
-
-- [ ] **Step 2: Run typecheck**
+- [ ] **Step 2: Typecheck**
 
 Run: `npm run typecheck`
 
-Expected: no TypeScript errors.
+Expected: no type errors.
 
 - [ ] **Step 3: Commit**
 
 ```bash
-git add src/commands/propose/harness.ts
-git commit -m "feat: implement propose harness with reviewer→proposer loop"
+git add src/commands/propose/agents.ts
+git commit -m "feat: reviewer/proposer prompt builders (is-solved format, least-privilege)"
 ```
 
 ---
 
-### Task 9: Integration tests and build verification
+### Task 8: Harness orchestration + CLI `--change`/`--max-rounds`
 
 **Files:**
+- Rework: `src/commands/propose/harness.ts`
+- Modify: `src/bin/cli.ts`
+
+- [ ] **Step 1: Replace src/commands/propose/harness.ts**
+
+```ts
+import { readFileSync, existsSync } from 'fs';
+import { join } from 'path';
+import { resolveRunner } from '../../lib/runner/index.js';
+import type { Runner, RunnerResult } from '../../lib/runner/types.js';
+import { createWorkspace, copyBack, cleanupWorkspace, sweepOrphanWorkspaces } from '../../lib/workspace.js';
+import type { Workspace } from '../../lib/workspace.js';
+import { parseIssuesFound, parseStatus, findLatestFindingsRound, getFindingsPath } from '../../lib/loop.js';
+import { getChangeDir, enumerateChangeArtifacts, validateChangeName } from '../../lib/artifacts.js';
+import { ReviewerAgent, ProposerAgent } from './agents.js';
+
+export interface HarnessOptions {
+    workspace: string;   // project root (the --workspace CLI arg)
+    changeName: string;  // the --change CLI arg
+    maxRounds?: number;
+}
+
+const DEFAULT_MAX_ROUNDS = 5;
+
+// Run one agent stage in its workspace. The workspace is ALWAYS cleaned up (finally),
+// even on failure; the copy-back `commit` runs only on a clean exit (exitCode 0).
+// Cleanup is in the finally and process.exit is left to the caller AFTER this returns,
+// because calling process.exit inside the try would skip the finally and leak the dir.
+async function runStage(
+    runner: Runner,
+    ws: Workspace,
+    prompt: string,
+    projectRoot: string,
+    commit: () => void,
+): Promise<RunnerResult> {
+    try {
+        const res = await runner.run({ prompt, workspaceDir: ws.dir, projectRoot });
+        if (res.exitCode === 0) commit();
+        return res;
+    } finally {
+        cleanupWorkspace(ws.dir);
+    }
+}
+
+export async function runProposeHarness(opts: HarnessOptions): Promise<void> {
+    const { workspace: projectRoot, changeName, maxRounds = DEFAULT_MAX_ROUNDS } = opts;
+
+    validateChangeName(changeName);
+    const changeDir = getChangeDir(projectRoot, changeName);
+    const artifacts = enumerateChangeArtifacts(projectRoot, changeName);
+    if (artifacts.length === 0) {
+        console.log(`⚠ csi-opsx: no artifacts found in openspec/changes/${changeName}. Nothing to review.`);
+        return;
+    }
+
+    const runner = resolveRunner();
+    if (!runner) {
+        console.log([
+            '⚠ csi-opsx: No runner available.',
+            '  Automated review loop unavailable.',
+            '  Install Claude Code to enable the automated review loop.',
+        ].join('\n'));
+        return;
+    }
+
+    sweepOrphanWorkspaces(projectRoot, changeName);
+
+    // --- Decide the starting phase from the committed findings (resumability) ---
+    let round = findLatestFindingsRound(changeDir);
+    let phase: 'reviewer' | 'proposer';
+    if (round === 0) {
+        round = 1;
+        phase = 'reviewer';
+    } else {
+        const latest = readFileSync(getFindingsPath(changeDir, round), 'utf8');
+        const status = parseStatus(latest);
+        const issues = parseIssuesFound(latest);
+        if (status === 'open' && issues === 0) {
+            printSummary(round, artifacts);
+            return;
+        }
+        if (status === 'open') {
+            phase = 'proposer';        // reviewer already produced findings; proposer's turn for round N
+        } else {
+            round = round + 1;         // status: addressed -> reviewer for the next round
+            phase = 'reviewer';
+        }
+    }
+
+    while (round <= maxRounds) {
+        const findingsName = `review-findings-${round}.md`;
+
+        if (phase === 'reviewer') {
+            // Reviewer reads artifacts in place; its workspace is empty and it writes only the findings file.
+            const ws = createWorkspace(projectRoot, changeName, 'reviewer', round, changeDir, []);
+            console.log(`  Round ${round}: reviewer running...`);
+            const res = await runStage(
+                runner,
+                ws,
+                ReviewerAgent.buildPrompt({ projectRoot, changeDir, artifactRelPaths: artifacts, round }),
+                projectRoot,
+                () => { if (existsSync(join(ws.dir, findingsName))) copyBack(ws.dir, changeDir, [findingsName]); },
+            );
+            if (res.exitCode !== 0) {
+                console.error(`Reviewer failed (round ${round}):\n${res.stderr}`);
+                process.exit(1);
+            }
+            const findingsPath = getFindingsPath(changeDir, round);
+            if (!existsSync(findingsPath)) {
+                console.error(`Reviewer did not write ${findingsName}`);
+                process.exit(1);
+            }
+            if (parseIssuesFound(readFileSync(findingsPath, 'utf8')) === 0) {
+                printSummary(round, artifacts);
+                return;
+            }
+            phase = 'proposer';
+        } else {
+            // Proposer edits writable copies of the artifacts + findings; commit copies findings LAST.
+            const proposerFiles = [...artifacts, findingsName];
+            const ws = createWorkspace(projectRoot, changeName, 'proposer', round, changeDir, proposerFiles);
+            const issues = parseIssuesFound(readFileSync(getFindingsPath(changeDir, round), 'utf8'));
+            console.log(`  Round ${round}: proposer running (${issues} issue${issues === 1 ? '' : 's'})...`);
+            const res = await runStage(
+                runner,
+                ws,
+                ProposerAgent.buildPrompt({ projectRoot, changeDir, artifactRelPaths: artifacts, round }),
+                projectRoot,
+                () => copyBack(ws.dir, changeDir, proposerFiles),
+            );
+            if (res.exitCode !== 0) {
+                console.error(`Proposer failed (round ${round}):\n${res.stderr}`);
+                process.exit(1);
+            }
+            round++;
+            phase = 'reviewer';
+        }
+    }
+
+    console.log(`⚠ csi-opsx propose: reached max rounds (${maxRounds}). Review the artifacts manually.`);
+}
+
+function printSummary(rounds: number, artifacts: string[]): void {
+    const findingFiles = Array.from({ length: rounds }, (_, i) => `review-findings-${i + 1}.md`);
+    console.log([
+        '✓ csi-opsx propose complete',
+        `  Rounds: ${rounds}`,
+        '  Final review: 0 issues found',
+        `  Artifacts: ${artifacts.join(', ')}`,
+        `  Review history: ${findingFiles.join(', ')}`,
+    ].join('\n'));
+}
+```
+
+- [ ] **Step 2: Update `src/bin/cli.ts`**
+
+Replace the `HarnessRunner` type, the `HARNESS_RUNNERS` map entry, and the `run` command. Use `HarnessOptions` as the runner's parameter type so `changeName`/`maxRounds` stay in sync:
+
+```ts
+import type { HarnessOptions } from '../commands/propose/harness.js';
+
+type HarnessRunner = (opts: HarnessOptions) => Promise<void>;
+
+const HARNESS_RUNNERS: Partial<Record<CommandName, HarnessRunner>> = {
+    propose: async (opts) => {
+        const { runProposeHarness } = await import('../commands/propose/harness.js');
+        await runProposeHarness(opts);
+    },
+};
+
+program
+    .command('run')
+    .description('Internal: run a harnessed command (called by skills via Bash)')
+    .requiredOption('--command <name>', 'command to run (propose)')
+    .requiredOption('--workspace <path>', 'project root path')
+    .requiredOption('--change <name>', 'name of the change folder under openspec/changes/')
+    .option('--max-rounds <n>', 'maximum reviewer→proposer rounds (default 5)', (v) => parseInt(v, 10))
+    .action(async (opts) => {
+        const runner = HARNESS_RUNNERS[opts.command as CommandName];
+        if (!runner) {
+            console.error(`Unknown command: ${opts.command}`);
+            process.exit(1);
+        }
+        await runner({
+            workspace: opts.workspace,
+            changeName: opts.change,
+            maxRounds: opts.maxRounds,
+        });
+    });
+```
+
+Notes:
+- The `(v) => parseInt(v, 10)` third arg to `.option(...)` coerces the raw string to a number before the action sees it.
+- `--max-rounds` is `.option` (not required); omitted → `undefined` → harness uses its default.
+
+- [ ] **Step 3: Typecheck**
+
+Run: `npm run typecheck`
+
+Expected: no type errors. (`HarnessOptions.artifacts` no longer exists; the old `{ workspace, artifacts }` call shape is gone.)
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add src/commands/propose/harness.ts src/bin/cli.ts
+git commit -m "feat: propose harness loop over a change folder; --change/--max-rounds CLI"
+```
+
+---
+
+### Task 9: SKILL.md, harness integration tests, build verification
+
+**Files:**
+- Modify: `src/commands/propose/SKILL.md`
 - Create: `src/commands/propose/__tests__/harness.test.ts`
 
-- [ ] **Step 1: Write integration tests**
+- [ ] **Step 1: Update `src/commands/propose/SKILL.md`**
+
+Replace the artifact-snapshot/diff steps with the change-name cascade + empty-guard, and the invocation block. The skill's run step becomes:
+
+````md
+## Resolve the change name and run the harness
+
+1. Determine the change folder name via this cascade:
+   - If the user passed an explicit name to `/csi-opsx:propose <name>`, use it.
+   - Else, use the change you just created/continued via `/opsx:propose` in this session.
+   - Else, list `openspec/changes/` and, if more than one active change exists, ask the user which to review.
+2. **Empty-guard:** if no change folder is resolved, or the resolved folder contains no
+   artifacts (`proposal.md`/`design.md`/`tasks.md`/`specs/**/spec.md`), stop and tell the
+   user there is nothing to review. Do NOT invoke the harness.
+3. Run via Bash (the harness enumerates the change folder itself):
+
+   ```bash
+   csi-opsx run --command=propose --workspace . --change <name>
+   ```
+
+   If the user invoked `/csi-opsx:propose` with an integer (e.g. `/csi-opsx:propose 3`),
+   append `--max-rounds=<integer>`. Otherwise omit it (harness default is 5).
+````
+
+- [ ] **Step 2: Write harness integration tests (mocked runner)**
 
 Create `src/commands/propose/__tests__/harness.test.ts`:
 
 ```ts
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { mkdirSync, rmSync, writeFileSync, existsSync } from 'fs';
+import { mkdirSync, rmSync, writeFileSync, readFileSync, existsSync } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
 
-vi.mock('../../../lib/runner/index.js', () => ({
-  resolveRunner: vi.fn(),
-}));
+vi.mock('../../../lib/runner/index.js', () => ({ resolveRunner: vi.fn() }));
 
 import { resolveRunner } from '../../../lib/runner/index.js';
 import { runProposeHarness } from '../harness.js';
 
+const CHANGE = 'add-auth';
+
 describe('runProposeHarness', () => {
-  let artifactsDir: string;
+  let projectRoot: string;
+  let changeDir: string;
 
   beforeEach(() => {
-    artifactsDir = join(tmpdir(), `harness-test-${Date.now()}`);
-    mkdirSync(artifactsDir, { recursive: true });
-    writeFileSync(join(artifactsDir, 'proposal.md'), '# Proposal');
-    writeFileSync(join(artifactsDir, 'design.md'), '# Design');
+    projectRoot = join(tmpdir(), `harness-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    changeDir = join(projectRoot, 'openspec', 'changes', CHANGE);
+    mkdirSync(changeDir, { recursive: true });
+    writeFileSync(join(changeDir, 'proposal.md'), '# Proposal');
+    writeFileSync(join(changeDir, 'design.md'), '# Design');
   });
-
   afterEach(() => {
-    rmSync(artifactsDir, { recursive: true, force: true });
+    rmSync(projectRoot, { recursive: true, force: true });
     vi.resetAllMocks();
   });
 
-  it('exits immediately and prints notice when no runner is available', async () => {
+  const findings = (issues: number, round: number, status: 'open' | 'addressed') =>
+    `---\nissues-found: ${issues}\nround: ${round}\nstatus: ${status}\n---\n`;
+
+  it('prints a notice and exits when no runner is available', async () => {
     vi.mocked(resolveRunner).mockReturnValue(null);
-    const consoleSpy = vi.spyOn(console, 'log');
-    await runProposeHarness({ workspace: artifactsDir, artifacts: ['proposal.md'] });
-    expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('No runner available'));
+    const log = vi.spyOn(console, 'log');
+    await runProposeHarness({ workspace: projectRoot, changeName: CHANGE });
+    expect(log).toHaveBeenCalledWith(expect.stringContaining('No runner available'));
   });
 
-  it('exits cleanly when reviewer finds 0 issues on first round', async () => {
+  it('exits cleanly when the first review finds 0 issues', async () => {
     vi.mocked(resolveRunner).mockReturnValue({
       isAvailable: () => true,
-      run: vi.fn().mockImplementation(async (_prompt: string, wsDir: string) => {
-        writeFileSync(
-          join(wsDir, 'review-findings-1.md'),
-          '---\nissues-found: 0\nround: 1\nstatus: open\n---\n'
-        );
+      run: vi.fn(async ({ workspaceDir }: { workspaceDir: string }) => {
+        writeFileSync(join(workspaceDir, 'review-findings-1.md'), findings(0, 1, 'open'));
         return { exitCode: 0, stdout: '', stderr: '' };
       }),
     });
-
-    const consoleSpy = vi.spyOn(console, 'log');
-    await runProposeHarness({ workspace: artifactsDir, artifacts: ['proposal.md', 'design.md'] });
-    expect(existsSync(join(artifactsDir, 'review-findings-1.md'))).toBe(true);
-    expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('csi-opsx propose complete'));
+    const log = vi.spyOn(console, 'log');
+    await runProposeHarness({ workspace: projectRoot, changeName: CHANGE });
+    expect(existsSync(join(changeDir, 'review-findings-1.md'))).toBe(true);
+    expect(log).toHaveBeenCalledWith(expect.stringContaining('csi-opsx propose complete'));
   });
 
-  it('runs proposer when reviewer finds issues, then reviewer again until 0 issues', async () => {
-    let callCount = 0;
+  it('runs reviewer → proposer → reviewer until 0 issues', async () => {
+    let n = 0;
     vi.mocked(resolveRunner).mockReturnValue({
       isAvailable: () => true,
-      run: vi.fn().mockImplementation(async (_prompt: string, wsDir: string) => {
-        callCount++;
-        if (callCount === 1) {
-          // Round 1 reviewer: finds 1 issue
-          writeFileSync(
-            join(wsDir, 'review-findings-1.md'),
-            '---\nissues-found: 1\nround: 1\nstatus: open\n---\n## Issue 1: Title\ndesc'
-          );
-        } else if (callCount === 2) {
-          // Round 1 proposer: marks addressed
-          writeFileSync(
-            join(wsDir, 'review-findings-1.md'),
-            '---\nissues-found: 1\nround: 1\nstatus: addressed\n---\n## Issue 1: Title\ndesc'
-          );
-          writeFileSync(join(wsDir, 'proposal.md'), '# Updated Proposal');
-        } else if (callCount === 3) {
-          // Round 2 reviewer: 0 issues
-          writeFileSync(
-            join(wsDir, 'review-findings-2.md'),
-            '---\nissues-found: 0\nround: 2\nstatus: open\n---\n'
-          );
+      run: vi.fn(async ({ workspaceDir }: { workspaceDir: string }) => {
+        n++;
+        if (n === 1) writeFileSync(join(workspaceDir, 'review-findings-1.md'), findings(1, 1, 'open') + '## Issue 1\nis-solved: false\nx');
+        else if (n === 2) {
+          writeFileSync(join(workspaceDir, 'review-findings-1.md'), findings(1, 1, 'addressed'));
+          writeFileSync(join(workspaceDir, 'proposal.md'), '# Updated');
+        } else if (n === 3) writeFileSync(join(workspaceDir, 'review-findings-2.md'), findings(0, 2, 'open'));
+        return { exitCode: 0, stdout: '', stderr: '' };
+      }),
+    });
+    await runProposeHarness({ workspace: projectRoot, changeName: CHANGE });
+    expect(n).toBe(3);
+    expect(readFileSync(join(changeDir, 'proposal.md'), 'utf8')).toBe('# Updated');
+    expect(existsSync(join(changeDir, 'review-findings-2.md'))).toBe(true);
+  });
+
+  it('resumes status=addressed by running the reviewer for the next round', async () => {
+    writeFileSync(join(changeDir, 'review-findings-1.md'), findings(1, 1, 'addressed'));
+    let n = 0;
+    vi.mocked(resolveRunner).mockReturnValue({
+      isAvailable: () => true,
+      run: vi.fn(async ({ workspaceDir }: { workspaceDir: string }) => {
+        n++;
+        writeFileSync(join(workspaceDir, 'review-findings-2.md'), findings(0, 2, 'open'));
+        return { exitCode: 0, stdout: '', stderr: '' };
+      }),
+    });
+    await runProposeHarness({ workspace: projectRoot, changeName: CHANGE });
+    expect(n).toBe(1);
+    expect(existsSync(join(changeDir, 'review-findings-2.md'))).toBe(true);
+  });
+
+  it('resumes status=open (issues>0) by running the PROPOSER for the same round', async () => {
+    writeFileSync(join(changeDir, 'review-findings-1.md'), findings(2, 1, 'open') + '## Issue 1\nis-solved: false\nx');
+    const runMock = vi.fn(async ({ workspaceDir }: { workspaceDir: string }) => {
+      // Proposer pass: mark addressed
+      writeFileSync(join(workspaceDir, 'review-findings-1.md'), findings(2, 1, 'addressed'));
+      return { exitCode: 0, stdout: '', stderr: '' };
+    });
+    // After the proposer, round 2 reviewer should find 0 issues; swap the impl on 2nd call.
+    let n = 0;
+    vi.mocked(resolveRunner).mockReturnValue({
+      isAvailable: () => true,
+      run: vi.fn(async ({ workspaceDir }: { workspaceDir: string }) => {
+        n++;
+        if (n === 1) return runMock({ workspaceDir }); // proposer for round 1
+        writeFileSync(join(workspaceDir, 'review-findings-2.md'), findings(0, 2, 'open')); // reviewer round 2
+        return { exitCode: 0, stdout: '', stderr: '' };
+      }),
+    });
+    await runProposeHarness({ workspace: projectRoot, changeName: CHANGE });
+    // 1st call was the proposer (NOT a re-run of the reviewer), 2nd was reviewer round 2.
+    expect(n).toBe(2);
+    expect(existsSync(join(changeDir, 'review-findings-2.md'))).toBe(true);
+  });
+
+  it('does NOT copy back artifacts when the proposer exits non-zero', async () => {
+    let n = 0;
+    vi.mocked(resolveRunner).mockReturnValue({
+      isAvailable: () => true,
+      run: vi.fn(async ({ workspaceDir }: { workspaceDir: string }) => {
+        n++;
+        if (n === 1) { // reviewer: 1 issue
+          writeFileSync(join(workspaceDir, 'review-findings-1.md'), findings(1, 1, 'open') + '## Issue 1\nis-solved: false\nx');
+          return { exitCode: 0, stdout: '', stderr: '' };
         }
+        // proposer: edits the copy but crashes (exit 1) -> must NOT reach the project
+        writeFileSync(join(workspaceDir, 'proposal.md'), '# Should NOT be committed');
+        return { exitCode: 1, stdout: '', stderr: 'boom' };
+      }),
+    });
+    const exitSpy = vi.spyOn(process, 'exit').mockImplementation(((): never => { throw new Error('exit'); }) as never);
+    await runProposeHarness({ workspace: projectRoot, changeName: CHANGE }).catch(() => {});
+    expect(readFileSync(join(changeDir, 'proposal.md'), 'utf8')).toBe('# Proposal'); // unchanged
+    exitSpy.mockRestore();
+  });
+
+  it('respects maxRounds when the reviewer keeps finding issues', async () => {
+    let n = 0;
+    vi.mocked(resolveRunner).mockReturnValue({
+      isAvailable: () => true,
+      run: vi.fn(async ({ workspaceDir }: { workspaceDir: string }) => {
+        n++;
+        const round = Math.ceil(n / 2);
+        const name = `review-findings-${round}.md`;
+        if (n % 2 === 1) writeFileSync(join(workspaceDir, name), findings(1, round, 'open') + '## Issue\nis-solved: false\nx');
+        else writeFileSync(join(workspaceDir, name), findings(1, round, 'addressed'));
         return { exitCode: 0, stdout: '', stderr: '' };
       }),
     });
-
-    await runProposeHarness({ workspace: artifactsDir, artifacts: ['proposal.md', 'design.md'] });
-    expect(callCount).toBe(3);
-    expect(existsSync(join(artifactsDir, 'review-findings-2.md'))).toBe(true);
+    const log = vi.spyOn(console, 'log');
+    await runProposeHarness({ workspace: projectRoot, changeName: CHANGE, maxRounds: 2 });
+    expect(n).toBe(4); // 2 rounds × (reviewer + proposer)
+    expect(log).toHaveBeenCalledWith(expect.stringContaining('reached max rounds'));
   });
 });
 ```
 
-- [ ] **Step 2: Run tests to verify they pass**
+- [ ] **Step 3: Run the full unit suite + typecheck**
 
-Run: `npm test`
+Run: `npm test && npm run typecheck`
 
-Expected: PASS — all tests pass including the 3 harness integration tests.
+Expected: PASS — all unit tests (permissions, cli, workspace, loop, artifacts, harness) pass; the real-`claude` sandbox test is skipped unless `claude` is installed; no type errors.
 
-- [ ] **Step 3: Full build**
+- [ ] **Step 4: Full build**
 
 Run: `npm run build`
 
 Expected: `dist/` built with no errors.
 
-- [ ] **Step 4: Commit**
+- [ ] **Step 5: Commit**
 
 ```bash
-git add src/commands/propose/__tests__/harness.test.ts
-git commit -m "test: add integration tests for propose harness loop"
+git add src/commands/propose/SKILL.md src/commands/propose/__tests__/harness.test.ts
+git commit -m "feat: propose SKILL change-name cascade + harness integration tests"
 ```
+
+---
+
+### Task 10 (Optional — do only if time permits): Bash-bypass assertion
+
+Defense-in-depth. The `Write`/`Edit` deny is tool-specific, so the one path-agnostic way around it is the `Bash` tool. Because the runner never passes `--allowedTools`, `Bash` needs approval and is auto-denied under `-p`. This adds a scenario proving the agent cannot write into the read-only project via `Bash`. (Auto-skipped when `claude` is absent, like the rest of the Task 3 suite.)
+
+**Files:**
+- Modify: `src/lib/runner/claude/__tests__/sandbox.integration.test.ts`
+
+- [ ] **Step 1: Add a Bash-bypass scenario inside the existing `describe.skipIf(!claudeAvailable)` block**
+
+```ts
+  it('does not let the agent bypass the deny via the Bash tool', async () => {
+    const projectRoot = mkdtempSync(join(tmpdir(), 'csi-proj-'));
+    const workspaceDir = mkdtempSync(join(tmpdir(), 'csi-ws-'));
+    const target = join(projectRoot, 'bash-leak.txt');
+    try {
+      await runner.run({
+        prompt: `Use the Bash tool to run a shell command that writes the text LEAK into the file at ${target}.`,
+        workspaceDir,
+        projectRoot,
+      });
+      expect(existsSync(target)).toBe(false); // Bash is not allowed -> auto-denied under -p
+    } finally {
+      rmSync(projectRoot, { recursive: true, force: true });
+      rmSync(workspaceDir, { recursive: true, force: true });
+    }
+  }, 180_000);
+```
+
+- [ ] **Step 2: Run (only meaningful with `claude` installed)**
+
+Run: `npx vitest run src/lib/runner/claude/__tests__/sandbox.integration.test.ts`
+
+Expected: PASS (or SKIPPED if `claude` is absent).
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add src/lib/runner/claude/__tests__/sandbox.integration.test.ts
+git commit -m "test(optional): assert Bash cannot bypass the project write-deny"
+```
+
+---
+
+## Self-Review (run before handing off)
+
+- **Spec coverage:** Trust boundary (Task 6 `validateChangeName`/enumerate; Task 8 `--change`), write sandbox (Tasks 1–3), reviewer-reads-in-place / proposer-copies (Tasks 7–8), proposer-owns-status + `is-solved` (Tasks 7–8, format), crash model / findings-last copy-back / resume-open⇒proposer (Task 8), deterministic naming + scoped sweep (Tasks 4, 8), real `claude -p` gate (Task 3). 
+- **Placeholder scan:** every code step shows full code; commands have expected output.
+- **Type consistency:** `RunnerOptions {prompt, workspaceDir, projectRoot?}`, `HarnessOptions {workspace, changeName, maxRounds?}`, `createWorkspace(projectRoot, changeName, role, round, artifactsDir, relativeFiles)`, `PromptArgs {projectRoot, changeDir, artifactRelPaths, round}` are used identically across Tasks 1–9.
