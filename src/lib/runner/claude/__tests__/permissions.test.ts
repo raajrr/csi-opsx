@@ -2,46 +2,58 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdirSync, rmSync, existsSync, readFileSync } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
-import { writePermissions } from '../permissions.js';
+import {toPermissionGlob, writePermissions} from '../permissions.js';
 
-describe('permissions', () => {
-   let tmpDir: string;
-
-   const TMP_CLAUDE_DIR = '.claude';
-   const SETTINGS_JSON = 'settings.json';
-   const PROPOSAL_MD = 'proposal.md';
-   const DESIGN_MD = 'design.md';
-
-   beforeEach(() => {
-       tmpDir = join(tmpdir(), `perms-test-${Date.now()}`);
-       mkdirSync(tmpDir, { recursive: true });
-   });
-
-   afterEach(() => {
-       rmSync(tmpDir, { recursive: true, force: true });
-   });
-
-   it(`creates ${TMP_CLAUDE_DIR}/${SETTINGS_JSON}`, () => {
-       writePermissions(tmpDir, ['review-findings-1.md']);
-       expect(existsSync(join(tmpDir, TMP_CLAUDE_DIR, SETTINGS_JSON))).toBe(true);
-   });
-
-   it('includes Write() allow entries for each writable file', () => {
-       writePermissions(tmpDir, [PROPOSAL_MD, DESIGN_MD]);
-       const settings = JSON.parse(readFileSync(join(tmpDir, TMP_CLAUDE_DIR, SETTINGS_JSON), 'utf8'));
-       expect(settings.permissions.allow).toContain(`Write(${PROPOSAL_MD})`);
-       expect(settings.permissions.allow).toContain(`Write(${DESIGN_MD})`);
-   })
-
-    it('includes Write(*) in deny', () => {
-        writePermissions(tmpDir, ['review-findings-1.md']);
-        const settings = JSON.parse(readFileSync(join(tmpDir, TMP_CLAUDE_DIR, SETTINGS_JSON), 'utf8'));
-        expect(settings.permissions.deny).contain(`Write(*)`);
+describe('toPermissionGlob', () => {
+    it('converts a Windows backslash drive path to MSYS form', () => {
+       expect(toPermissionGlob('C:\\Users\\me\\proj')).toBe('//c/Users/me/proj');
     });
 
-   it('allow list has exactly as many entries as writable files', () => {
-       writePermissions(tmpDir, [PROPOSAL_MD, DESIGN_MD, 'tasks.md']);
-       const settings = JSON.parse(readFileSync(join(tmpDir, TMP_CLAUDE_DIR, SETTINGS_JSON), 'utf8'));
-       expect(settings.permissions.allow).toHaveLength(3);
-   });
+    it('converts a Windows forward-slash drive path to MSYS form (lowercased drive)', () => {
+       expect(toPermissionGlob('D:/Dev/Personal Projects/csi-opsx')).toBe('//d/Dev/Personal Projects/csi-opsx');
+    });
+
+    it('prefixes a POSIX absolute path with one extra slash', () => {
+       expect(toPermissionGlob('/Users/me/proj')).toBe('//Users/me/proj');
+    });
+});
+
+describe('writePermissions', () => {
+    let workspaceDir: string;
+    const PROJECT_ROOT = 'C:\\Users\\me\\proj';
+    const CLAUDE_DIR = '.claude';
+    const SETTINGS_JSON = 'settings.json';
+
+    beforeEach(() => {
+        workspaceDir = join(tmpdir(), `perms-test-${Date.now()}`);
+        mkdirSync(workspaceDir, { recursive: true });
+    });
+    afterEach(() => {
+        rmSync(workspaceDir, { recursive: true, force: true });
+    });
+
+    it('creates a .claude/settings.json', () => {
+       writePermissions(workspaceDir, PROJECT_ROOT);
+       expect(existsSync(join(workspaceDir, CLAUDE_DIR, SETTINGS_JSON))).toBe(true);
+    });
+
+    it('lists the project root under additionalDirectories (native path)', () => {
+        writePermissions(workspaceDir, PROJECT_ROOT);
+        const settings = JSON.parse(readFileSync(join(workspaceDir, CLAUDE_DIR, SETTINGS_JSON), 'utf8'));
+        expect(settings.permissions.additionalDirectories).toEqual([PROJECT_ROOT]);
+    });
+
+    it('denies Write and Edit on the project subtree using the glob form', () => {
+        writePermissions(workspaceDir, PROJECT_ROOT);
+        const settings = JSON.parse(readFileSync(join(workspaceDir, CLAUDE_DIR, SETTINGS_JSON), 'utf8'));
+        expect(settings.permissions.deny).toContain('Write(//c/Users/me/proj/**)');
+        expect(settings.permissions.deny).toContain('Edit(//c/Users/me/proj/**)');
+    });
+
+    it('does not emit an allow list or a Write(*) catch-all', () => {
+        writePermissions(workspaceDir, PROJECT_ROOT);
+        const settings = JSON.parse(readFileSync(join(workspaceDir, CLAUDE_DIR, SETTINGS_JSON), 'utf8'));
+        expect(settings.permissions.allow).toBeUndefined();
+        expect(settings.permissions.deny).not.toContain('Write(*)');
+    });
 });
