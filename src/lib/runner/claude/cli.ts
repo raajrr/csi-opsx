@@ -13,13 +13,17 @@ export class ClaudeCliRunner implements Runner {
     }
 
     async run(opts: RunnerOptions): Promise<RunnerResult> {
-        const { prompt, workspaceDir, writablePaths } = opts;
-        if (writablePaths) {
-            writePermissions(workspaceDir, writablePaths);
+        const { prompt, workspaceDir, projectRoot } = opts;
+
+        /* The workspace cwd is writable under acceptEdits; the project is re-granted
+           read-only via settings.json. Bash is deliberately NOT allowed (write bypass).
+        */
+        if (projectRoot) {
+            writePermissions(workspaceDir, projectRoot);
         }
         const result = spawnSync(
             'claude',
-            ['-p', prompt, '--allowedTools', 'Read,Write'],
+            ['-p', prompt, '--permission-mode', 'acceptEdits', '--setting-sources', 'project'],
             {
                 cwd: workspaceDir,
                 encoding: 'utf8',

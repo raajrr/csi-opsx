@@ -6,8 +6,8 @@ export interface RunnerResult {
 
 export interface RunnerOptions {
     prompt: string;
-    workspaceDir: string;
-    writablePaths?: string[];
+    workspaceDir: string;   // the temp agent cwd (the only writable area)
+    projectRoot?: string;   // the real project dir; when set, the runner sandboxes the project read-only
 }
 
 export interface Runner {

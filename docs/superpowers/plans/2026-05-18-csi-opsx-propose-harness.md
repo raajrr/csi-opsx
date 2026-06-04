@@ -57,7 +57,7 @@ A **deny-rule block does not appear in the `permission_denials` JSON** — the o
 - Rework: `src/lib/runner/claude/permissions.ts`
 - Rework: `src/lib/runner/claude/__tests__/permissions.test.ts`
 
-- [ ] **Step 1: Replace the test file with tests for the new behavior**
+- [X] **Step 1: Replace the test file with tests for the new behavior**
 
 Overwrite `src/lib/runner/claude/__tests__/permissions.test.ts`:
 
@@ -121,13 +121,13 @@ describe('writePermissions', () => {
 });
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [X] **Step 2: Run tests to verify they fail**
 
 Run: `npx vitest run src/lib/runner/claude/__tests__/permissions.test.ts`
 
 Expected: FAIL — `toPermissionGlob` is not exported; assertions on `additionalDirectories`/glob deny do not match the old output.
 
-- [ ] **Step 3: Replace src/lib/runner/claude/permissions.ts**
+- [X] **Step 3: Replace src/lib/runner/claude/permissions.ts**
 
 ```ts
 import { mkdirSync, writeFileSync } from 'fs';
@@ -169,13 +169,13 @@ export function writePermissions(workspaceDir: string, projectRoot: string): voi
 }
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [X] **Step 4: Run tests to verify they pass**
 
 Run: `npx vitest run src/lib/runner/claude/__tests__/permissions.test.ts`
 
-Expected: PASS — all 8 tests pass.
+Expected: PASS — all 7 tests pass.
 
-- [ ] **Step 5: Commit**
+- [X] **Step 5: Commit**
 
 ```bash
 git add src/lib/runner/claude/permissions.ts src/lib/runner/claude/__tests__/permissions.test.ts
@@ -191,7 +191,7 @@ git commit -m "feat: rework permissions to acceptEdits sandbox + path->glob help
 - Rework: `src/lib/runner/claude/cli.ts`
 - Rework: `src/lib/runner/claude/__tests__/cli.test.ts`
 
-- [ ] **Step 1: Update the test file for the new flags + projectRoot behavior**
+- [X] **Step 1: Update the test file for the new flags + projectRoot behavior**
 
 Overwrite `src/lib/runner/claude/__tests__/cli.test.ts`:
 
@@ -282,13 +282,13 @@ describe('ClaudeCliRunner', () => {
 });
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [X] **Step 2: Run tests to verify they fail**
 
 Run: `npx vitest run src/lib/runner/claude/__tests__/cli.test.ts`
 
 Expected: FAIL — the current `cli.ts` still passes `--allowedTools Read,Write` and reads `writableRelativePaths`.
 
-- [ ] **Step 3: Replace src/lib/runner/types.ts**
+- [X] **Step 3: Replace src/lib/runner/types.ts**
 
 ```ts
 export interface RunnerResult {
@@ -309,7 +309,7 @@ export interface Runner {
 }
 ```
 
-- [ ] **Step 4: Replace src/lib/runner/claude/cli.ts**
+- [X] **Step 4: Replace src/lib/runner/claude/cli.ts**
 
 ```ts
 import { spawnSync } from 'child_process';
@@ -355,7 +355,7 @@ export class ClaudeCliRunner implements Runner {
 }
 ```
 
-- [ ] **Step 5: Run tests + typecheck**
+- [X] **Step 5: Run tests + typecheck**
 
 Run: `npx vitest run src/lib/runner/claude/__tests__/cli.test.ts && npm run typecheck`
 
