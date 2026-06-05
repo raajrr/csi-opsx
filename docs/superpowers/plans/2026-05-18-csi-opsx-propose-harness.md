@@ -361,7 +361,7 @@ Run: `npx vitest run src/lib/runner/claude/__tests__/cli.test.ts && npm run type
 
 Expected: PASS, no type errors.
 
-- [ ] **Step 6: Commit**
+- [X] **Step 6: Commit**
 
 ```bash
 git add src/lib/runner/types.ts src/lib/runner/claude/cli.ts src/lib/runner/claude/__tests__/cli.test.ts
@@ -660,7 +660,7 @@ The two parsers must read **only the frontmatter block** so a body `is-solved:` 
 - Finish: `src/lib/loop.ts`
 - Modify: `src/lib/__tests__/loop.test.ts`
 
-- [ ] **Step 1: Add anchoring tests to the existing test file**
+- [X] **Step 1: Add anchoring tests to the existing test file**
 
 Append these tests inside the existing `describe('loop', …)` in `src/lib/__tests__/loop.test.ts`:
 
@@ -678,14 +678,26 @@ Append these tests inside the existing `describe('loop', …)` in `src/lib/__tes
     it('parseIssuesFound reads the frontmatter count, ignoring body text', () => {
       expect(parseIssuesFound(WITH_BODY)).toBe(2);
     });
+
+    it('parseStatus throws when there is no frontmatter block', () => {
+      expect(() => parseStatus('## Just a heading\nstatus: open')).toThrow('Missing status');
+    });
   });
 ```
 
-- [ ] **Step 2: Run tests to verify the current state fails**
+Also add this test to the **existing** `describe('findLatestFindingsRound', …)` block — it exercises the `!existsSync` early-return branch, which the empty-folder test skips (both return `0`, but via different code paths):
+
+```ts
+    it('returns 0 when the directory does not exist', () => {
+      expect(findLatestFindingsRound(join(tmpDir, 'no-such-dir'))).toBe(0);
+    });
+```
+
+- [X] **Step 2: Run tests to verify the current state fails**
 
 Run: `npx vitest run src/lib/__tests__/loop.test.ts`
 
-Expected: FAIL — `findLatestFindingsRound`/`getFindingsPath` are empty (return `undefined`), so the pre-existing tests for them fail; the new anchoring tests may pass by luck but the file is incomplete.
+Expected: FAIL — `findLatestFindingsRound`/`getFindingsPath` are empty (return `undefined`), so the tests for them fail (including the new `returns 0 when the directory does not exist` case). Of the anchoring tests, the two `WITH_BODY` cases pass by luck (first-match-wins, frontmatter on top), but **`parseStatus throws when there is no frontmatter block` genuinely FAILS on the current unanchored parser** — the `/m` regex matches the body's `status: open` line and returns `'open'` instead of throwing. That red is the proof anchoring is needed; the Step 3 rewrite turns it green.
 
 - [ ] **Step 3: Replace src/lib/loop.ts**
 
