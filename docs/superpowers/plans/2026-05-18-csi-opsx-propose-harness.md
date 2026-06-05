@@ -699,7 +699,7 @@ Run: `npx vitest run src/lib/__tests__/loop.test.ts`
 
 Expected: FAIL — `findLatestFindingsRound`/`getFindingsPath` are empty (return `undefined`), so the tests for them fail (including the new `returns 0 when the directory does not exist` case). Of the anchoring tests, the two `WITH_BODY` cases pass by luck (first-match-wins, frontmatter on top), but **`parseStatus throws when there is no frontmatter block` genuinely FAILS on the current unanchored parser** — the `/m` regex matches the body's `status: open` line and returns `'open'` instead of throwing. That red is the proof anchoring is needed; the Step 3 rewrite turns it green.
 
-- [ ] **Step 3: Replace src/lib/loop.ts**
+- [X] **Step 3: Replace src/lib/loop.ts**
 
 ```ts
 import { readdirSync, existsSync } from 'fs';
@@ -739,13 +739,13 @@ export function getFindingsPath(artifactsDir: string, round: number): string {
 }
 ```
 
-- [ ] **Step 4: Run tests + typecheck**
+- [X] **Step 4: Run tests + typecheck**
 
 Run: `npx vitest run src/lib/__tests__/loop.test.ts && npm run typecheck`
 
 Expected: PASS — all loop tests (existing + anchoring) pass.
 
-- [ ] **Step 5: Commit**
+- [X] **Step 5: Commit**
 
 ```bash
 git add src/lib/loop.ts src/lib/__tests__/loop.test.ts
