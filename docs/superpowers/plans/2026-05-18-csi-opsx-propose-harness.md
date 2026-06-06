@@ -437,7 +437,7 @@ Expected: PASS (both scenarios) when `claude` is available; SKIPPED otherwise. I
 
 > **Gate finding (2026-06-06):** the first run FAILED at the in-workspace assertion — `claude` exited 0 but wrote nothing. Root cause was in **Task 2's `cli.ts`**, not the sandbox: `spawnSync` with `shell: true` + the multi-word `prompt` as an argv element concatenates the command line **unquoted**, so the shell word-split the prompt and `claude` received only `"Use"`. Fix: pass the prompt via **stdin** (`input: prompt`) and drop it from the args array (remaining args are single tokens, safe under `shell:true`). `cli.test.ts` updated to assert the prompt on `opts.input` instead of in `args` — a unit-level regression guard. The sandbox mechanism itself (acceptEdits + `additionalDirectories` + MSYS deny globs) was proven correct once the prompt actually reached `claude`. The Task 2 §"Step 4" snippet above still shows the old arg form; treat `cli.ts`/`cli.test.ts` in the repo as authoritative.
 
-- [ ] **Step 3: Commit**
+- [X] **Step 3: Commit**
 
 ```bash
 git add src/lib/runner/claude/__tests__/sandbox.integration.test.ts
