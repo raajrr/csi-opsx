@@ -44,9 +44,9 @@ describe('ClaudeCliRunner', () => {
                 await new ClaudeCliRunner().run({ prompt: PROMPT, workspaceDir: WS });
                 const [cmd, args, opts] = vi.mocked(spawnSync).mock.calls[0];
                 expect(cmd).toBe('claude');
-                expect(args).toEqual(['-p', PROMPT, '--permission-mode', 'acceptEdits', '--setting-sources', 'project']);
+                expect(args).toEqual(['-p', '--permission-mode', 'acceptEdits', '--setting-sources', 'project']);
                 expect(args).not.toContain('--allowedTools');
-                expect(opts).toMatchObject({ cwd: WS });
+                expect(opts).toMatchObject({ cwd: WS, input: PROMPT });
             } finally {
                 rmSync(WS, { recursive: true, force: true });
             }

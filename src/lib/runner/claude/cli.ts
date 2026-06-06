@@ -23,9 +23,10 @@ export class ClaudeCliRunner implements Runner {
         }
         const result = spawnSync(
             'claude',
-            ['-p', prompt, '--permission-mode', 'acceptEdits', '--setting-sources', 'project'],
+            ['-p', '--permission-mode', 'acceptEdits', '--setting-sources', 'project'],
             {
                 cwd: workspaceDir,
+                input: prompt,
                 encoding: 'utf8',
                 shell: true,
                 maxBuffer: 10 * 1024 * 1024,
