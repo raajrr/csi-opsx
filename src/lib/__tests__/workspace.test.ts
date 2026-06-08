@@ -1,111 +1,135 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdirSync, rmSync, writeFileSync, existsSync, readFileSync } from 'fs';
+import {mkdirSync, rmSync, writeFileSync, existsSync, readFileSync} from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
-import { createWorkspace, copyBack, cleanupWorkspace } from '../workspace.js';
+import { createWorkspace, copyBack, cleanupWorkspace, sweepOrphanWorkspaces } from '../workspace.js'
+
+const CSI_OPSX_PREFIX = 'csi-opsx';
+const PROJECT_NAME = 'my-project';
+const PROJECT_ROOT = join(tmpdir(), PROJECT_NAME);
+const CHANGE_NAME = 'add-auth';
+const PROPOSAL_MD = 'proposal.md';
+const PROPOSAL_CONTENT = '# Proposal';
+const SPECS_DIR = 'specs';
+const FEATURE_DIR = 'auth';
+const SPEC_MD = 'spec.md';
+const SPEC_CONTENT = '# Auth Spec';
+const NESTED_SPEC_MD = `${SPECS_DIR}/${FEATURE_DIR}/${SPEC_MD}`;
+
+const PROPOSER_AGENT = 'proposer';
+const REVIEWER_AGENT = 'reviewer';
 
 describe('workspace', () => {
-    let artifactsDir: string;
-
-    const PROPOSAL_MD = 'proposal.md';
-    const PROPOSAL_CONTENT = '# Proposal';
-    const DESIGN_MD = 'design.md';
-    const DESIGN_CONTENT = '# Design';
-    const AUTH_MD = 'auth.md';
-    const AUTH_CONTENT = '# Auth Spec';
-    const OPENSPEC_DIR = 'openspec';
-    const SPECS_DIR = 'specs';
-    const AUTH_MD_SUBDIR = `${OPENSPEC_DIR}/${SPECS_DIR}/${AUTH_MD}`;
+    let changeDir: string;
 
     beforeEach(() => {
-        artifactsDir = join(tmpdir(), `ws-test-${Date.now()}`);
-        mkdirSync(artifactsDir, { recursive: true });
-        writeFileSync(join(artifactsDir, PROPOSAL_MD), PROPOSAL_CONTENT);
-        writeFileSync(join(artifactsDir, DESIGN_MD), DESIGN_CONTENT);
-        mkdirSync(join(artifactsDir, OPENSPEC_DIR, SPECS_DIR), { recursive: true });
-        writeFileSync(join(artifactsDir, OPENSPEC_DIR, SPECS_DIR, AUTH_MD), AUTH_CONTENT);
+        changeDir = join(tmpdir(), `ws-source-${Date.now()}`);
+        mkdirSync(join(changeDir, SPECS_DIR, FEATURE_DIR), { recursive: true });
+        writeFileSync(join(changeDir, PROPOSAL_MD), PROPOSAL_CONTENT);
+        writeFileSync(join(changeDir, NESTED_SPEC_MD), SPEC_CONTENT);
     });
 
     afterEach(() => {
-        rmSync(artifactsDir, { recursive: true, force: true });
+        rmSync(changeDir, { recursive: true, force: true });
     });
 
     describe('createWorkspace', () => {
-       it('creates a temp workspace directory', () => {
-        const ws = createWorkspace('reviewer', 1, artifactsDir, [PROPOSAL_MD]);
-        expect(existsSync(ws.dir)).toBe(true);
-        rmSync(ws.dir, { recursive: true, force: true });
-       });
+        it('creates a temp dir whose name encodes project base, change, role and round', () => {
+            const ROUND_NUMBER = 3;
+            const ws = createWorkspace(PROJECT_ROOT, CHANGE_NAME, PROPOSER_AGENT, ROUND_NUMBER, changeDir, []);
+            try {
+                expect(existsSync(ws.dir)).toBe(true);
+                expect(ws.dir).toContain(`${CSI_OPSX_PREFIX}-${PROJECT_NAME}-`);
+                expect(ws.dir).toContain(`-${CHANGE_NAME}-${PROPOSER_AGENT}-${ROUND_NUMBER}`);
+            } finally {
+                rmSync(ws.dir, { recursive: true, force: true });
+            }
+        });
 
-       it('copies flat files into workspace directory', () => {
-           const ws = createWorkspace('reviewer', 1, artifactsDir, [PROPOSAL_MD, DESIGN_MD]);
-           expect(readFileSync(join(ws.dir, PROPOSAL_MD), 'utf-8')).toBe(PROPOSAL_CONTENT);
-           expect(readFileSync(join(ws.dir, DESIGN_MD), 'utf-8')).toBe(DESIGN_CONTENT);
-           rmSync(ws.dir, { recursive: true, force: true });
-       });
+        it('is deterministic for the same project/change/role/round', () => {
+           const ROUND_NUMBER = 1;
+           const wsA = createWorkspace(PROJECT_ROOT, CHANGE_NAME, REVIEWER_AGENT, ROUND_NUMBER, changeDir, []);
+           const wsB = createWorkspace(PROJECT_ROOT, CHANGE_NAME, REVIEWER_AGENT, ROUND_NUMBER, changeDir, []);
+           try {
+               expect(wsA.dir).toBe(wsB.dir);
+           } finally {
+               rmSync(wsA.dir, { recursive: true, force: true });
+               // This rmSync catches cases when the test fails, i.e. when wsA !== wsB
+               rmSync(wsB.dir, { recursive: true, force: true });
+           }
+        });
 
-       it('preserves subdirectory structure for nested paths', () => {
-           const ws = createWorkspace('reviewer', 1, artifactsDir, [AUTH_MD_SUBDIR]);
-           expect(existsSync(join(ws.dir, OPENSPEC_DIR, SPECS_DIR, AUTH_MD))).toBe(true);
-           rmSync(ws.dir, { recursive: true, force: true });
-       });
+        it('copies flat and nested files, preserving structure', () => {
+           const ws = createWorkspace(PROJECT_ROOT, CHANGE_NAME, PROPOSER_AGENT, 1, changeDir, [PROPOSAL_MD, NESTED_SPEC_MD]);
+           try {
+                expect(readFileSync(join(ws.dir, PROPOSAL_MD), 'utf-8')).toBe(PROPOSAL_CONTENT);
+                expect(existsSync(join(ws.dir, NESTED_SPEC_MD))).toBe(true);
+           } finally {
+               rmSync(ws.dir, { recursive: true, force: true });
+           }
+        });
 
-       it('skips files that do not exist in the artifacts directory', () => {
-           const ws = createWorkspace('reviewer', 1, artifactsDir, ['nonexistent.md']);
-           expect(existsSync(join(ws.dir, 'nonexistent.md'))).toBe(false);
-           rmSync(ws.dir, { recursive: true, force: true });
-       });
-
-        it('dir name contains the role and round', () => {
-            const ws = createWorkspace('proposer', 3, artifactsDir, []);
-            expect(ws.dir).toContain('proposer');
-            expect(ws.dir).toContain('3');
-            rmSync(ws.dir, { recursive: true, force: true });
+        it('skips files absent from the source dir', () => {
+            const NOPE_MD = 'nope.md';
+            const ws = createWorkspace(PROJECT_ROOT, CHANGE_NAME, REVIEWER_AGENT, 1, changeDir, [NOPE_MD]);
+            try { expect(existsSync(join(ws.dir, NOPE_MD))).toBe(false); } finally { rmSync(ws.dir, { recursive: true, force: true }); }
         });
     });
 
     describe('copyBack', () => {
-        it('copies a file from workspace back to the artifacts directory', () => {
-            const REVIEW_FINDINGS_1 = 'review-findings-1.md'
-            const REVIEW_CONTENT = '---\nissues-found: 2\n---';
-            const ws = createWorkspace('reviewer', 1, artifactsDir, []);
-            writeFileSync(join(ws.dir, REVIEW_FINDINGS_1), REVIEW_CONTENT);
-            copyBack(ws.dir, artifactsDir, [REVIEW_FINDINGS_1]);
-            expect(readFileSync(join(artifactsDir, REVIEW_FINDINGS_1), 'utf-8')).toBe(REVIEW_CONTENT);
-            rmSync(ws.dir, { recursive: true, force: true });
-        });
-
-        it('preserves subdirectory structure when copying back', () => {
-            const UPDATED_AUTH_CONTENT = '# Updated Auth';
-            const ws = createWorkspace('reviewer', 1, artifactsDir, [AUTH_MD_SUBDIR]);
-            writeFileSync(join(ws.dir, AUTH_MD_SUBDIR), UPDATED_AUTH_CONTENT);
-            copyBack(ws.dir, artifactsDir, [AUTH_MD_SUBDIR]);
-            expect(readFileSync(join(artifactsDir, AUTH_MD_SUBDIR), 'utf-8')).toBe(UPDATED_AUTH_CONTENT);
-            rmSync(ws.dir, { recursive: true, force: true });
-        });
-
-        it('copies multiple files with mixed paths back to the artifacts directory', () => {
-            const UPDATED_PROPOSAL_CONTENT = '# Updated Proposal';
-            const UPDATED_AUTH_CONTENT = '# Updated Auth';
-            const ws = createWorkspace('reviewer', 1, artifactsDir, [PROPOSAL_MD, AUTH_MD_SUBDIR]);
-            writeFileSync(join(ws.dir, PROPOSAL_MD), UPDATED_PROPOSAL_CONTENT);
-            writeFileSync(join(ws.dir, AUTH_MD_SUBDIR), UPDATED_AUTH_CONTENT);
-            copyBack(ws.dir, artifactsDir, [PROPOSAL_MD, AUTH_MD_SUBDIR]);
-            expect(readFileSync(join(artifactsDir, PROPOSAL_MD), 'utf-8')).toBe(UPDATED_PROPOSAL_CONTENT);
-            expect(readFileSync(join(artifactsDir, AUTH_MD_SUBDIR), 'utf-8')).toBe(UPDATED_AUTH_CONTENT);
-            rmSync(ws.dir, { recursive: true, force: true });
+        it('copies files (incl. nested) from workspace back to the change dir', () => {
+            const UPDATED_PROPOSAL_CONTENT = '# Updated';
+            const UPDATED_SPEC_CONTENT = '# Updated Spec';
+            const ws = createWorkspace(PROJECT_ROOT, CHANGE_NAME, PROPOSER_AGENT, 1, changeDir, [PROPOSAL_MD, NESTED_SPEC_MD]);
+            try {
+                writeFileSync(join(ws.dir, PROPOSAL_MD), UPDATED_PROPOSAL_CONTENT);
+                writeFileSync(join(ws.dir, NESTED_SPEC_MD), UPDATED_SPEC_CONTENT);
+                copyBack(ws.dir, changeDir, [PROPOSAL_MD, NESTED_SPEC_MD]);
+                expect(readFileSync(join(changeDir, PROPOSAL_MD), 'utf-8')).toBe(UPDATED_PROPOSAL_CONTENT);
+                expect(readFileSync(join(changeDir, NESTED_SPEC_MD), 'utf-8')).toBe(UPDATED_SPEC_CONTENT);
+            } finally {
+                rmSync(ws.dir, { recursive: true, force: true });
+            }
         });
     });
 
     describe('cleanupWorkspace', () => {
-        it('removes the workspace directory', () => {
-            const ws = createWorkspace('reviewer', 1, artifactsDir, []);
+        it('removes the workspace dir', () => {
+            const ws = createWorkspace(PROJECT_ROOT, CHANGE_NAME, REVIEWER_AGENT, 1, changeDir, []);
             cleanupWorkspace(ws.dir);
             expect(existsSync(ws.dir)).toBe(false);
         });
 
         it('does not throw if workspace does not exist', () => {
-            expect(() => cleanupWorkspace('/tmp/nonexistent-csi-opsx-xyz')).not.toThrow();
+            expect(() => cleanupWorkspace(join(tmpdir(), 'csi-opsx-absent'))).not.toThrow();
         });
     });
-})
+
+    describe('sweepOrphanWorkspaces', () => {
+        it('removes leftover dirs for this project+change but leaves other changes alone', () => {
+            const mine = createWorkspace(PROJECT_ROOT, CHANGE_NAME, REVIEWER_AGENT, 1, changeDir, []);
+            const other = createWorkspace(PROJECT_ROOT, 'add-billing', REVIEWER_AGENT, 1, changeDir, []);
+            try {
+                sweepOrphanWorkspaces(PROJECT_ROOT, CHANGE_NAME);
+                expect(existsSync(mine.dir)).toBe(false);
+                expect(existsSync(other.dir)).toBe(true);
+            } finally {
+                rmSync(mine.dir, { recursive: true, force: true });
+                rmSync(other.dir, { recursive: true, force: true });
+            }
+        });
+
+        it('does not sweep a change whose name merely extends this one (add-auth vs add-auth-extra)', () => {
+            const mine = createWorkspace(PROJECT_ROOT, CHANGE_NAME, REVIEWER_AGENT, 1, changeDir, []);
+            const sibling = createWorkspace(PROJECT_ROOT, `${CHANGE_NAME}-extra`, REVIEWER_AGENT, 1, changeDir, []);
+            try {
+                sweepOrphanWorkspaces(PROJECT_ROOT, CHANGE_NAME);
+                expect(existsSync(mine.dir)).toBe(false);
+                expect(existsSync(sibling.dir)).toBe(true);
+            } finally {
+                rmSync(mine.dir, { recursive: true, force: true });
+                rmSync(sibling.dir, { recursive: true, force: true });
+            }
+        });
+    });
+});

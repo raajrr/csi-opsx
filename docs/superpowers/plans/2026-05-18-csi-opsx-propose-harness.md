@@ -383,7 +383,7 @@ Create `src/lib/runner/claude/__tests__/sandbox.integration.test.ts`:
 
 ```ts
 import { describe, it, expect } from 'vitest';
-import { mkdtempSync, mkdirSync, writeFileSync, existsSync, rmSync } from 'fs';
+import { mkdtempSync, writeFileSync, existsSync, rmSync} from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
 import { ClaudeCliRunner } from '../cli.js';
@@ -393,39 +393,40 @@ const claudeAvailable = runner.isAvailable();
 
 // Real claude -p calls — slow and cost money; auto-skipped when claude is absent.
 describe.skipIf(!claudeAvailable)('ClaudeCliRunner sandbox (real claude -p)', () => {
-  async function runScenario(projectRootDir: string): Promise<void> {
-    const projectRoot = mkdtempSync(join(tmpdir(), projectRootDir));
-    const workspaceDir = mkdtempSync(join(tmpdir(), 'csi-ws-'));
-    writeFileSync(join(projectRoot, 'CONTEXT.md'), '# context');
-    try {
-      const inside = await runner.run({
-        prompt: 'Use the Write tool to create a file named out.txt in the current working directory with the exact contents: OK',
-        workspaceDir,
-        projectRoot,
-      });
-      expect(inside.exitCode).toBe(0);
-      expect(existsSync(join(workspaceDir, 'out.txt'))).toBe(true); // in-workspace write allowed
+    async function runScenario(projectRootDir: string): Promise<void> {
+        const projectRoot  = mkdtempSync(join(tmpdir(), projectRootDir));
+        const workspaceDir = mkdtempSync(join(tmpdir(), 'csi-ws'));
+        const OUT_TXT = 'out.txt';
+        writeFileSync(join(projectRoot, 'CONTEXT.md'), '# context');
+        try {
+            const runningInsideWs = await runner.run({
+                prompt: `Use the Write tool to create a file named ${OUT_TXT} in the current working directory with the exact contents following the colon : OK`,
+                workspaceDir,
+                projectRoot,
+            });
+            expect(runningInsideWs.exitCode).toBe(0);
+            expect(existsSync(join(workspaceDir, OUT_TXT))).toBe(true); // in-workspace write allowed
 
-      const target = join(projectRoot, 'leak.txt');
-      await runner.run({
-        prompt: `Use the Write tool to create a file at the absolute path ${target} with the exact contents: LEAK`,
-        workspaceDir,
-        projectRoot,
-      });
-      expect(existsSync(target)).toBe(false); // project write blocked — file state is ground truth
-    } finally {
-      rmSync(projectRoot, { recursive: true, force: true });
-      rmSync(workspaceDir, { recursive: true, force: true });
+            const leakTarget = join(projectRoot, 'leak.txt');
+            await runner.run({
+                prompt: `Use the Write tool to create a file at the absolute path ${leakTarget} with the exact contents following the colon : LEAK`,
+                workspaceDir,
+                projectRoot,
+            });
+            expect(existsSync(leakTarget)).toBe(false); // project write blocked — file state is ground truth
+        } finally {
+            rmSync(projectRoot, { recursive: true, force: true });
+            rmSync(workspaceDir, { recursive: true, force: true });
+        }
     }
-  }
 
-  it('allows in-workspace writes and blocks project writes', async () => {
-    await runScenario('csi-proj-');
-  }, 180_000);
+    it('allows in-workspace writes and blocks project writes', async () => {
+        await runScenario('csi-proj');
+    }, 180_000);
 
-  it('holds when the project path contains a space', async () => {
-    await runScenario('csi proj '); // prefix with a space -> spaced project dir
-  }, 180_000);
+    it('holds when the project path contains a space', async () => {
+        await runScenario('csi proj '); // prefix with a space -> spaced project dir
+    }, 180_000);
 });
 ```
 
@@ -452,7 +453,7 @@ git commit -m "test: real claude -p sandbox integration test (asserts file state
 - Rework: `src/lib/workspace.ts`
 - Rework: `src/lib/__tests__/workspace.test.ts`
 
-- [ ] **Step 1: Replace the test file**
+- [X] **Step 1: Replace the test file**
 
 Overwrite `src/lib/__tests__/workspace.test.ts`:
 
@@ -489,14 +490,19 @@ describe('workspace', () => {
         expect(ws.dir).toContain('csi-opsx-my-project-');
         expect(ws.dir).toContain('-add-auth-proposer-3');
       } finally {
-        cleanupWorkspace(ws.dir);
+        rmSync(ws.dir, { recursive: true, force: true });
       }
     });
 
     it('is deterministic for the same project/change/role/round', () => {
       const a = createWorkspace(PROJECT_ROOT, CHANGE, 'reviewer', 1, changeDir, []);
       const b = createWorkspace(PROJECT_ROOT, CHANGE, 'reviewer', 1, changeDir, []);
-      try { expect(a.dir).toBe(b.dir); } finally { cleanupWorkspace(a.dir); }
+      try {
+        expect(a.dir).toBe(b.dir);
+      } finally {
+        rmSync(a.dir, { recursive: true, force: true });
+        rmSync(b.dir, { recursive: true, force: true });
+      }
     });
 
     it('copies flat and nested files, preserving structure', () => {
@@ -505,13 +511,13 @@ describe('workspace', () => {
         expect(readFileSync(join(ws.dir, PROPOSAL), 'utf8')).toBe('# Proposal');
         expect(existsSync(join(ws.dir, 'specs', 'auth', 'spec.md'))).toBe(true);
       } finally {
-        cleanupWorkspace(ws.dir);
+        rmSync(ws.dir, { recursive: true, force: true });
       }
     });
 
     it('skips files absent from the source dir', () => {
       const ws = createWorkspace(PROJECT_ROOT, CHANGE, 'reviewer', 1, changeDir, ['nope.md']);
-      try { expect(existsSync(join(ws.dir, 'nope.md'))).toBe(false); } finally { cleanupWorkspace(ws.dir); }
+      try { expect(existsSync(join(ws.dir, 'nope.md'))).toBe(false); } finally { rmSync(ws.dir, { recursive: true, force: true }); }
     });
   });
 
@@ -525,41 +531,60 @@ describe('workspace', () => {
         expect(readFileSync(join(changeDir, PROPOSAL), 'utf8')).toBe('# Updated');
         expect(readFileSync(join(changeDir, SPEC_NESTED), 'utf8')).toBe('# Updated Spec');
       } finally {
-        cleanupWorkspace(ws.dir);
+        rmSync(ws.dir, { recursive: true, force: true });
       }
     });
   });
 
   describe('cleanupWorkspace', () => {
-    it('removes the workspace dir and does not throw if it is absent', () => {
+    it('removes the workspace dir', () => {
       const ws = createWorkspace(PROJECT_ROOT, CHANGE, 'reviewer', 1, changeDir, []);
       cleanupWorkspace(ws.dir);
       expect(existsSync(ws.dir)).toBe(false);
-      expect(() => cleanupWorkspace(ws.dir)).not.toThrow();
+    });
+
+    it('does not throw if the workspace is absent', () => {
+      expect(() => cleanupWorkspace(join(tmpdir(), 'csi-opsx-absent'))).not.toThrow();
     });
   });
 
   describe('sweepOrphanWorkspaces', () => {
     it('removes leftover dirs for this project+change but leaves other changes alone', () => {
       const mine = createWorkspace(PROJECT_ROOT, CHANGE, 'reviewer', 1, changeDir, []);
-      const other = createWorkspace(PROJECT_ROOT, 'other-change', 'reviewer', 1, changeDir, []);
+      const other = createWorkspace(PROJECT_ROOT, 'add-billing', 'reviewer', 1, changeDir, []);
       try {
         sweepOrphanWorkspaces(PROJECT_ROOT, CHANGE);
         expect(existsSync(mine.dir)).toBe(false);
         expect(existsSync(other.dir)).toBe(true);
       } finally {
-        cleanupWorkspace(other.dir);
+        rmSync(mine.dir, { recursive: true, force: true });
+        rmSync(other.dir, { recursive: true, force: true });
+      }
+    });
+
+    it('does not sweep a change whose name merely extends this one (add-auth vs add-auth-extra)', () => {
+      const mine = createWorkspace(PROJECT_ROOT, CHANGE, 'reviewer', 1, changeDir, []);
+      const sibling = createWorkspace(PROJECT_ROOT, `${CHANGE}-extra`, 'reviewer', 1, changeDir, []);
+      try {
+        sweepOrphanWorkspaces(PROJECT_ROOT, CHANGE);
+        expect(existsSync(mine.dir)).toBe(false);
+        expect(existsSync(sibling.dir)).toBe(true);
+      } finally {
+        rmSync(mine.dir, { recursive: true, force: true });
+        rmSync(sibling.dir, { recursive: true, force: true });
       }
     });
   });
 });
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+> **Teardown convention:** every `finally` block uses raw `rmSync(dir, { recursive: true, force: true })` rather than `cleanupWorkspace`. Teardown must depend only on trusted primitives, never on the function under test — otherwise a regression in `cleanupWorkspace` would silently leak temp dirs while the suite stays green (or throw inside an unrelated test's `finally` and misattribute the failure). `cleanupWorkspace` is exercised only in its own `describe` block, where it *is* the system under test. `force: true` already no-ops on a missing path, so the raw call is exactly as safe.
+
+- [X] **Step 2: Run tests to verify they fail**
 
 Run: `npx vitest run src/lib/__tests__/workspace.test.ts`
 
-Expected: FAIL — `createWorkspace` has the old `(role, round, …)` signature and `sweepOrphanWorkspaces` does not exist.
+Expected: FAIL (3 of 9) — `createWorkspace` still uses the old `Date.now()` naming body, so the name-encoding test fails; `sweepOrphanWorkspaces` is an empty stub, so both sweep tests leave `mine.dir` and fail. `typecheck` is clean. (Observed 2026-06-07: `is deterministic` passes only *coincidentally* — two back-to-back `Date.now()` calls usually land in the same millisecond — and becomes a stable, real pass once Step 3 implements deterministic naming.)
 
 - [ ] **Step 3: Replace src/lib/workspace.ts**
 
@@ -578,7 +603,11 @@ export interface Workspace {
 // pathHash disambiguates two same-named checkouts that share the OS temp namespace.
 function workspacePrefix(projectRoot: string, changeName: string): string {
     const base = basename(projectRoot);
-    const normalized = process.platform === 'win32' ? projectRoot.toLowerCase() : projectRoot;
+    // Windows and (default) macOS filesystems are case-insensitive, so normalize
+    // case before hashing. NOTE: a case-sensitive-formatted APFS volume would be
+    // mishandled here — rare enough to accept.
+    const caseInsensitiveFs = process.platform === 'win32' || process.platform === 'darwin';
+    const normalized = caseInsensitiveFs ? projectRoot.toLowerCase() : projectRoot;
     const hash = createHash('sha256').update(normalized).digest('hex').slice(0, 8);
     return `csi-opsx-${base}-${hash}-${changeName}`;
 }
@@ -627,12 +656,26 @@ export function cleanupWorkspace(workspaceDir: string): void {
 }
 
 // Remove orphaned temp dirs from prior crashed runs — scoped to this (project, change)
-// prefix only, so a concurrent run on a different change/project is never touched.
+// by matching the exact workspace-name shape under the OS temp dir. The matching rules
+// (escaping + anchoring) are explained inline below.
 export function sweepOrphanWorkspaces(projectRoot: string, changeName: string): void {
     const prefix = workspacePrefix(projectRoot, changeName);
+    // `prefix` embeds the project's folder name, which can contain regex metacharacters
+    // ('.', '(', '+', …). Inserted into a pattern raw, those would act as operators —
+    // e.g. an unescaped '.' means "any character", so a prefix built from "My.App" would
+    // also match a DIFFERENT project's dir like "MyXApp" and we'd delete its workspaces.
+    // This replace puts a backslash before every metachar ($& = the matched char) so each
+    // is matched literally.
+    const safePrefix = prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    // Require the FULL name, anchored start (^) to end ($): <prefix>-<role>-<round>.
+    // The role word immediately after the prefix and the trailing $ are what stop a sweep
+    // of "add-auth" from also deleting "add-auth-extra" (the next chunk would be "extra",
+    // not a role) or a suffixed leftover like "...-reviewer-1-old". \\d -> \d: backslashes
+    // are doubled because this regex is built from a string, not written as a /literal/.
+    const pattern = new RegExp(`^${safePrefix}-(reviewer|proposer)-\\d+$`);
     const base = tmpdir();
     for (const entry of readdirSync(base)) {
-        if (entry.startsWith(prefix)) {
+        if (pattern.test(entry)) {
             rmSync(join(base, entry), { recursive: true, force: true });
         }
     }

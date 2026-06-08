@@ -1,15 +1,14 @@
 import { describe, it, expect } from 'vitest';
-import { mkdtempSync, mkdirSync, writeFileSync, existsSync, rmSync} from 'fs';
+import { mkdtempSync, writeFileSync, existsSync, rmSync} from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
 import { ClaudeCliRunner } from '../cli.js';
-import {rmdirSync} from "node:fs";
 
 const runner = new ClaudeCliRunner();
 const claudeAvailable = runner.isAvailable();
 
 // Real claude -p calls — slow and cost money; auto-skipped when claude is absent.
-describe.skipIf(!claudeAvailable)('ClaudeCliRunner sandbox (real claude -p', () => {
+describe.skipIf(!claudeAvailable)('ClaudeCliRunner sandbox (real claude -p)', () => {
     async function runScenario(projectRootDir: string): Promise<void> {
         const projectRoot  = mkdtempSync(join(tmpdir(), projectRootDir));
         const workspaceDir = mkdtempSync(join(tmpdir(), 'csi-ws'));
