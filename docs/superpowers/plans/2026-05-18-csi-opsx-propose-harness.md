@@ -682,7 +682,7 @@ export function sweepOrphanWorkspaces(projectRoot: string, changeName: string): 
 }
 ```
 
-- [ ] **Step 4: Run tests + typecheck**
+- [X] **Step 4: Run tests + typecheck**
 
 Run: `npx vitest run src/lib/__tests__/workspace.test.ts && npm run typecheck`
 

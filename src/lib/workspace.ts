@@ -32,14 +32,14 @@ export function createWorkspace(
     artifactsDir: string,
     relativeFiles: string[]
 ): Workspace {
-    const workspaceDir =join(tmpdir(), `${workspacePrefix(projectRoot, changeName)}-${role}-${round}`);
+    const workspaceDir = join(tmpdir(), `${workspacePrefix(projectRoot, changeName)}-${role}-${round}`);
     // Deterministic name: remove any stale dir from a prior crashed run before recreating.
     if(existsSync(workspaceDir)) { rmSync(workspaceDir, { recursive: true, force: true }); }
     mkdirSync(workspaceDir, { recursive: true });
 
     for (const relFile of relativeFiles) {
         const src = join(artifactsDir, relFile);
-        if (existsSync(src)) {
+        if(existsSync(src)) {
             const dest = join(workspaceDir, relFile);
             mkdirSync(dirname(dest), { recursive: true });
             copyFileSync(src, dest);
@@ -51,10 +51,10 @@ export function createWorkspace(
 
 // Copies files in list order — callers that need atomicity put the commit-marker file last.
 export function copyBack(workspaceDir: string, artifactsDir: string, relativeFiles: string[]): void {
-    for (const relFile of relativeFiles) {
+    for(const relFile of relativeFiles) {
         const src = join(workspaceDir, relFile);
-        /*  Only copy back files that exist in the source, so we don't copy back
-            any temporary files the agent may have created during its work.
+        /*  Skip listed files that aren't present in the workspace — tolerates optional
+            artifacts (e.g. design.md / tasks.md) the agent didn't produce this round.
         */
         if(existsSync(src)) {
             const dest = join(artifactsDir, relFile);
@@ -65,7 +65,7 @@ export function copyBack(workspaceDir: string, artifactsDir: string, relativeFil
 }
 
 export function cleanupWorkspace(workspaceDir: string): void {
-    if (existsSync(workspaceDir)) {
+    if(existsSync(workspaceDir)) {
         rmSync(workspaceDir, { recursive: true, force: true });
     }
 }
