@@ -39,7 +39,7 @@ A **deny-rule block does not appear in the `permission_denials` JSON** — the o
 | `src/lib/__tests__/workspace.test.ts` | **Rework** | Update for the new signature + name; add sweep test |
 | `src/lib/loop.ts` | **Finish** | Frontmatter-anchored `parseIssuesFound`/`parseStatus`; implement `findLatestFindingsRound`/`getFindingsPath` |
 | `src/lib/__tests__/loop.test.ts` | **Modify** | Add anchoring tests (body `status:`/`is-solved:` ignored) |
-| `src/lib/artifacts.ts` | **Create** | `validateChangeName`, `getChangeDir`, `enumerateChangeArtifacts` |
+| `src/lib/artifacts.ts` | **Create** | `validateChangeName`, `getChangeDirectory`, `enumerateChangeArtifacts` |
 | `src/lib/__tests__/artifacts.test.ts` | **Create** | Optional files, nested specs, exclusions, traversal rejection, empty/missing folder |
 | `src/commands/propose/agents.ts` | **Create** | `ReviewerAgent`/`ProposerAgent` prompt builders (is-solved format, least-privilege instructions) |
 | `src/commands/propose/harness.ts` | **Rework** | `runProposeHarness({workspace, changeName, maxRounds?})` — validate → enumerate → loop |
@@ -688,12 +688,14 @@ Run: `npx vitest run src/lib/__tests__/workspace.test.ts && npm run typecheck`
 
 Expected: PASS, no type errors.
 
-- [ ] **Step 5: Commit**
+- [X] **Step 5: Commit**
 
 ```bash
 git add src/lib/workspace.ts src/lib/__tests__/workspace.test.ts
 git commit -m "feat: deterministic per-change workspace naming + scoped orphan sweep"
 ```
+
+Landed as `739d768` (tests + implementation) + `a1c8cb1` (comment/formatting fixes + plan checkboxes), pushed to origin/master.
 
 ---
 
@@ -805,7 +807,11 @@ git commit -m "feat: finish loop parsers; anchor issues-found/status to frontmat
 - Create: `src/lib/artifacts.ts`
 - Create: `src/lib/__tests__/artifacts.test.ts`
 
-- [ ] **Step 1: Write failing tests**
+- [X] **Step 1: Write failing tests**
+
+> Design notes (why the tests look like this): `validateChangeName` is split into a whole-name loop (`'', '.', '..'`) and a separators-only embedded loop (`'/', '\\'`). `..` is deliberately *not* tested embedded between alnums — `add-auth..x` is a single safe path segment the validator correctly accepts; only separators are dangerous wherever they appear. The capability-spec assertion uses a forward-slash literal (not `join`, which yields `\` on Windows and would break the permission globs). `ignores unknown files` pins the allowlist design so a future "walk the whole dir" refactor can't silently leak `review-findings-*.md` back to the agent.
+>
+> **Depth-1 finding (2026-06-09, verified from OpenSpec source):** capability dirs under `specs/` are exactly ONE level deep. Every discovery site in Fission-AI/OpenSpec (`specs-apply.ts` `findSpecUpdates`, `item-discovery.ts` `getSpecIds`, `list.ts`, `view.ts`, `archive.ts`, `validator.ts`) does a single non-recursive `readdir` + `join(specsDir, entry.name, 'spec.md')`; a deeper `specs/auth/sso/spec.md` is silently ignored at apply time. So our enumeration is depth-1 too — recursing would grant write access to files OpenSpec can never apply. The `ignores spec.md files nested deeper than one capability level` test pins this; the originally planned recursive `collectSpecs` helper is deleted.
 
 Create `src/lib/__tests__/artifacts.test.ts`:
 
@@ -814,133 +820,162 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdirSync, rmSync, writeFileSync } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
-import { validateChangeName, getChangeDir, enumerateChangeArtifacts } from '../artifacts.js';
+import { validateChangeName, getChangeDirectory, enumerateChangeArtifacts} from '../artifacts.js';
 
 const CHANGE = 'add-auth';
-
 describe('artifacts', () => {
-  let projectRoot: string;
-  let changeDir: string;
 
-  beforeEach(() => {
-    projectRoot = join(tmpdir(), `proj-${Date.now()}`);
-    changeDir = join(projectRoot, 'openspec', 'changes', CHANGE);
-    mkdirSync(changeDir, { recursive: true });
-  });
-  afterEach(() => {
-    rmSync(projectRoot, { recursive: true, force: true });
-  });
+    let projectRoot: string;
+    let changeDir: string;
 
-  describe('validateChangeName', () => {
-    it('accepts normal names', () => {
-      expect(() => validateChangeName('add-auth_v2.1')).not.toThrow();
+    beforeEach(() => {
+        projectRoot = join(tmpdir(), `proj-${Date.now()}`);
+        changeDir = join(projectRoot, 'openspec', 'changes', CHANGE);
+        mkdirSync(changeDir, { recursive: true });
     });
-    it('rejects traversal and separators', () => {
-      for (const bad of ['..', '.', 'a/b', 'a\\b', '../x', '']) {
-        expect(() => validateChangeName(bad)).toThrow();
-      }
-    });
-  });
-
-  describe('getChangeDir', () => {
-    it('builds the change dir under openspec/changes', () => {
-      expect(getChangeDir(projectRoot, CHANGE)).toBe(changeDir);
-    });
-    it('validates the name before building a path', () => {
-      expect(() => getChangeDir(projectRoot, '..')).toThrow();
-    });
-  });
-
-  describe('enumerateChangeArtifacts', () => {
-    it('returns only the known artifact files that exist', () => {
-      writeFileSync(join(changeDir, 'proposal.md'), 'x');
-      writeFileSync(join(changeDir, 'tasks.md'), 'x'); // design.md intentionally absent
-      expect(enumerateChangeArtifacts(projectRoot, CHANGE).sort()).toEqual(['proposal.md', 'tasks.md']);
+    afterEach(() => {
+        rmSync(projectRoot, { recursive: true, force: true });
     });
 
-    it('includes nested specs/**/spec.md with forward slashes', () => {
-      writeFileSync(join(changeDir, 'proposal.md'), 'x');
-      mkdirSync(join(changeDir, 'specs', 'auth'), { recursive: true });
-      writeFileSync(join(changeDir, 'specs', 'auth', 'spec.md'), 'x');
-      expect(enumerateChangeArtifacts(projectRoot, CHANGE).sort()).toEqual(['proposal.md', 'specs/auth/spec.md']);
+    describe('validateChangeName', () => {
+        it('accepts normal names', () => {
+           expect(() => validateChangeName('add-auth_v2.1')).not.toThrow();
+        });
+        it('rejects traversal and separators', () => {
+            // invalid as a whole name (empty / current-dir / parent-dir)
+            for (const name of ['', '.', '..']) {
+                expect(() => validateChangeName(name)).toThrow();
+            }
+            for (const fragment of ['/', '\\']) {
+                // standalone
+                expect(() => validateChangeName(fragment)).toThrow();
+                // embedded *in the middle*
+                expect(() => validateChangeName(`${CHANGE}${fragment}x`)).toThrow();
+            }
+        });
     });
 
-    it('excludes .openspec.yaml and review-findings files', () => {
-      writeFileSync(join(changeDir, 'proposal.md'), 'x');
-      writeFileSync(join(changeDir, '.openspec.yaml'), 'x');
-      writeFileSync(join(changeDir, 'review-findings-1.md'), 'x');
-      expect(enumerateChangeArtifacts(projectRoot, CHANGE)).toEqual(['proposal.md']);
+    describe('getChangeDirectory', () => {
+        it('builds the change directory under openspec/changes', () => {
+            expect(getChangeDirectory(projectRoot, CHANGE)).toBe(changeDir);
+        });
+        it('validates the name before building a path', () => {
+            expect(() => getChangeDirectory(projectRoot, '..')).toThrow();
+        });
     });
 
-    it('throws when the change folder does not exist', () => {
-      expect(() => enumerateChangeArtifacts(projectRoot, 'no-such-change')).toThrow();
+    describe('enumerateChangeArtifacts', () => {
+        const PROPOSAL_MD = 'proposal.md';
+        const TASKS_MD = 'tasks.md';
+        const SPECS_DIR = 'specs';
+        const AUTH_DIR = 'auth';
+        const SPEC_MD = 'spec.md';
+        it('returns only the known artifact files that exist', () => {
+            writeFileSync(join(changeDir, PROPOSAL_MD), 'x');
+            writeFileSync(join(changeDir, TASKS_MD), 'x'); // design.md intentionally absent
+            expect(enumerateChangeArtifacts(projectRoot, CHANGE).sort()).toEqual([PROPOSAL_MD, TASKS_MD]);
+        });
+
+        it('includes nested specs/<capability>/spec.md with forward slashes', () => {
+            writeFileSync(join(changeDir, PROPOSAL_MD), 'x');
+            mkdirSync(join(changeDir, SPECS_DIR, AUTH_DIR), { recursive: true });
+            writeFileSync(join(changeDir, SPECS_DIR, AUTH_DIR, SPEC_MD), 'x');
+            expect(enumerateChangeArtifacts(projectRoot, CHANGE).sort())
+                .toEqual([PROPOSAL_MD, `${SPECS_DIR}/${AUTH_DIR}/${SPEC_MD}`]);
+        });
+
+        it('ignores spec.md files nested deeper than one capability level', () => {
+            writeFileSync(join(changeDir, PROPOSAL_MD), 'x');
+            // specs/auth/sso/spec.md — OpenSpec would never apply this, so it is not an artifact
+            mkdirSync(join(changeDir, SPECS_DIR, AUTH_DIR, 'sso'), { recursive: true });
+            writeFileSync(join(changeDir, SPECS_DIR, AUTH_DIR, 'sso', SPEC_MD), 'x');
+            expect(enumerateChangeArtifacts(projectRoot, CHANGE)).toEqual([PROPOSAL_MD]);
+        });
+
+        it('excludes .openspec.yaml and review-findings files', () => {
+            writeFileSync(join(changeDir, PROPOSAL_MD), 'x');
+            writeFileSync(join(changeDir, '.openspec.yaml'), 'x');
+            writeFileSync(join(changeDir, 'review-findings-1.md'), 'x');
+            expect(enumerateChangeArtifacts(projectRoot, CHANGE)).toEqual([PROPOSAL_MD]);
+        });
+
+        it('ignores unknown files', () => {
+            writeFileSync(join(changeDir, PROPOSAL_MD), 'x');
+            writeFileSync(join(changeDir, 'notes.md'), 'x');
+            expect(enumerateChangeArtifacts(projectRoot, CHANGE)).toEqual([PROPOSAL_MD]);
+        });
+
+        it('throws when the change folder does not exist', () => {
+            expect(() => enumerateChangeArtifacts(projectRoot, 'no-such-change')).toThrow();
+        });
     });
-  });
 });
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [X] **Step 2: Run tests to verify they fail**
 
 Run: `npx vitest run src/lib/__tests__/artifacts.test.ts`
 
-Expected: FAIL — `Cannot find module '../artifacts.js'`.
+Expected: FAIL (all but one). `accepts normal names` passes — an empty-bodied `validateChangeName` never throws, so `.not.toThrow()` holds. The rest fail because the stubs don't return/throw yet; the two `enumerate(...).sort()` cases surface as `TypeError: Cannot read properties of undefined (reading 'sort')`, which clears once the function returns an array. (artifacts.ts already exists as stubs this session, so it's assertion/Type failures rather than the module-not-found this step originally predicted.) Verified red 2026-06-09 at 8-fail/1-pass; the depth-1 test was added to the sketch after that run — write it and re-confirm red (9-fail/1-pass) before starting Step 3.
 
-- [ ] **Step 3: Implement src/lib/artifacts.ts**
+- [X] **Step 3: Implement src/lib/artifacts.ts**
 
 ```ts
-import { existsSync, readdirSync, statSync } from 'fs';
+import { existsSync, readdirSync } from 'fs';
 import { join } from 'path';
 
 const KNOWN_FILES = ['proposal.md', 'design.md', 'tasks.md'];
 
-// A change name must be a single safe path segment — rejected BEFORE any path is built,
-// so `--change ..` can never escape openspec/changes/.
+/*
+   A change name must be a single safe path segment — rejected BEFORE any path is built,
+   so `--change ..` can never escape openspec/changes/.
+*/
 export function validateChangeName(name: string): void {
     if (name === '.' || name === '..' || !/^[A-Za-z0-9._-]+$/.test(name)) {
         throw new Error(`Invalid change name: ${JSON.stringify(name)}`);
     }
 }
 
-export function getChangeDir(projectRoot: string, changeName: string): string {
+export function getChangeDirectory(projectRoot: string, changeName: string): string {
     validateChangeName(changeName);
     return join(projectRoot, 'openspec', 'changes', changeName);
 }
 
-// Returns artifact paths RELATIVE to the change dir, forward-slashed.
-// Deterministic: same folder in -> same list out, no model in the loop.
+/*
+   Returns artifact paths RELATIVE to the change dir, forward-slashed.
+   Deterministic: same folder in -> same list out, no model in the loop.
+*/
 export function enumerateChangeArtifacts(projectRoot: string, changeName: string): string[] {
-    const changeDir = getChangeDir(projectRoot, changeName);
-    if (!existsSync(changeDir)) {
+    const SPECS_SUBDIR = 'specs';
+    const SPEC_MD = 'spec.md';
+
+    const changeDirectory = getChangeDirectory(projectRoot, changeName);
+    if (!existsSync(changeDirectory)) {
         throw new Error(`Change folder not found: openspec/changes/${changeName}`);
     }
 
-    const found: string[] = [];
-    for (const f of KNOWN_FILES) {
-        if (existsSync(join(changeDir, f))) found.push(f);
-    }
-    const specsDir = join(changeDir, 'specs');
-    if (existsSync(specsDir)) collectSpecs(specsDir, 'specs', found);
-    return found;
-}
+    const found = KNOWN_FILES.filter(f => existsSync(join(changeDirectory, f)));
+    const specsDirectory = join(changeDirectory, SPECS_SUBDIR);
 
-function collectSpecs(absDir: string, relDir: string, out: string[]): void {
-    for (const entry of readdirSync(absDir)) {
-        const abs = join(absDir, entry);
-        const rel = `${relDir}/${entry}`;
-        if (statSync(abs).isDirectory()) {
-            collectSpecs(abs, rel, out);
-        } else if (entry === 'spec.md') {
-            out.push(rel);
-        }
-    }
+    if (!existsSync(specsDirectory)) { return found; }
+
+    /*
+    OpenSpec capabilities are exactly one level deep (specs/<capability>/spec.md) —
+    its apply/list/view code never recurses, so neither do we. A deeper spec.md is
+    invisible to OpenSpec at apply time and must not become a writable artifact.
+    */
+    const specs = readdirSync(specsDirectory, { withFileTypes: true })
+        .filter(entry => entry.isDirectory() && existsSync(join(specsDirectory, entry.name, SPEC_MD)))
+        .map(entry => `${SPECS_SUBDIR}/${entry.name}/${SPEC_MD}`);
+    return [...found, ...specs];
 }
 ```
 
-- [ ] **Step 4: Run tests + typecheck**
+- [X] **Step 4: Run tests + typecheck**
 
 Run: `npx vitest run src/lib/__tests__/artifacts.test.ts && npm run typecheck`
 
-Expected: PASS, no type errors.
+Expected: PASS, no type errors. Verified 2026-06-10: **10/10 tests pass**, `tsc --noEmit` clean (after removing the dead `statSync` import left over from deleting `collectSpecs`).
 
 - [ ] **Step 5: Commit**
 
@@ -1078,7 +1113,7 @@ import type { Runner, RunnerResult } from '../../lib/runner/types.js';
 import { createWorkspace, copyBack, cleanupWorkspace, sweepOrphanWorkspaces } from '../../lib/workspace.js';
 import type { Workspace } from '../../lib/workspace.js';
 import { parseIssuesFound, parseStatus, findLatestFindingsRound, getFindingsPath } from '../../lib/loop.js';
-import { getChangeDir, enumerateChangeArtifacts, validateChangeName } from '../../lib/artifacts.js';
+import { getChangeDirectory, enumerateChangeArtifacts, validateChangeName } from '../../lib/artifacts.js';
 import { ReviewerAgent, ProposerAgent } from './agents.js';
 
 export interface HarnessOptions {
@@ -1113,7 +1148,7 @@ export async function runProposeHarness(opts: HarnessOptions): Promise<void> {
     const { workspace: projectRoot, changeName, maxRounds = DEFAULT_MAX_ROUNDS } = opts;
 
     validateChangeName(changeName);
-    const changeDir = getChangeDir(projectRoot, changeName);
+    const changeDir = getChangeDirectory(projectRoot, changeName);
     const artifacts = enumerateChangeArtifacts(projectRoot, changeName);
     if (artifacts.length === 0) {
         console.log(`⚠ csi-opsx: no artifacts found in openspec/changes/${changeName}. Nothing to review.`);
@@ -1293,7 +1328,7 @@ Replace the artifact-snapshot/diff steps with the change-name cascade + empty-gu
    - Else, use the change you just created/continued via `/opsx:propose` in this session.
    - Else, list `openspec/changes/` and, if more than one active change exists, ask the user which to review.
 2. **Empty-guard:** if no change folder is resolved, or the resolved folder contains no
-   artifacts (`proposal.md`/`design.md`/`tasks.md`/`specs/**/spec.md`), stop and tell the
+   artifacts (`proposal.md`/`design.md`/`tasks.md`/`specs/*/spec.md`), stop and tell the
    user there is nothing to review. Do NOT invoke the harness.
 3. Run via Bash (the harness enumerates the change folder itself):
 
