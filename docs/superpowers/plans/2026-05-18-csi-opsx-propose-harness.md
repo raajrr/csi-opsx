@@ -977,7 +977,9 @@ Run: `npx vitest run src/lib/__tests__/artifacts.test.ts && npm run typecheck`
 
 Expected: PASS, no type errors. Verified 2026-06-10: **10/10 tests pass**, `tsc --noEmit` clean (after removing the dead `statSync` import left over from deleting `collectSpecs`).
 
-- [ ] **Step 5: Commit**
+- [X] **Step 5: Commit**
+
+Landed as `d3cd20d` 2026-06-10 (bundled artifacts.ts + artifacts.test.ts + this plan's Task 6 edits). Not pushed yet.
 
 ```bash
 git add src/lib/artifacts.ts src/lib/__tests__/artifacts.test.ts
@@ -993,7 +995,9 @@ The reviewer reads artifacts + context **in place** (it cannot write them) and w
 **Files:**
 - Create: `src/commands/propose/agents.ts`
 
-- [ ] **Step 1: Write src/commands/propose/agents.ts**
+- [X] **Step 1: Write src/commands/propose/agents.ts**
+
+> Design notes (2026-06-10): **No personas.** Both prompts lead with an imperative ("Please thoroughly review…", "Please thoroughly evaluate… and address every issue…") rather than "You are an expert…". Controlled studies find persona/credential framing does not reliably improve objective-task accuracy and can nudge a reviewer toward false confidence; the behavioral adjective "thoroughly" is kept because it describes *how to act*, not a credential. **Clarity-with-a-fence:** each role is told to write its prose (issue descriptions / artifact revisions) clearly and unambiguously for both a downstream agent and a human — but explicitly NOT to restyle the machine-read structure. The findings file's frontmatter (`issues-found`, `status`) and `---` fences are parsed by `loop.ts` with column-0 anchors (`/^---/`, `/^issues-found:/m`, `/^status:/m`), so the reviewer prompt also states the file MUST BEGIN with `---` and keep those lines exact; `is-solved:` is read by the *next* round's reviewer, not the parser, so it is convention rather than machine-critical. **contextBlock** also points agents at the project's source (general path, conditional "read only what's relevant") and lists `AGENTS.md` beside `CLAUDE.md`. The template literals are flush-left (column 0): their leading whitespace is literal, and indenting them would leak indented frontmatter into the findings file and break the parser.
 
 ```ts
 import type { AgentRole } from '../../lib/types.js';
@@ -1013,9 +1017,12 @@ export interface AgentConfig {
 function contextBlock(projectRoot: string): string {
     return [
         `Read these for project context (READ-ONLY — you cannot and must not modify them):`,
-        `- ${projectRoot}/CLAUDE.md (project conventions, if present)`,
+        `- ${projectRoot}/CLAUDE.md or ${projectRoot}/AGENTS.md (project conventions, if present)`,
         `- ${projectRoot}/openspec/ (existing specs and schemas)`,
         `- ${projectRoot}/docs/ (ADRs and other docs, if present)`,
+        `- the project's source code under ${projectRoot}/ — when a claim or requirement`,
+        `  depends on how the system actually behaves, read the specific source files`,
+        `  involved rather than relying on documentation alone. Read only what's relevant.`,
     ].join('\n');
 }
 
@@ -1027,18 +1034,18 @@ export const ReviewerAgent: AgentConfig = {
             round > 1
                 ? `\nAlso read ${changeDir}/review-findings-${round - 1}.md and verify each prior issue was actually addressed.\n`
                 : '';
-        return `You are a thorough technical reviewer.
-
-Read these artifact files (READ-ONLY — review them, do not modify them):
+        return `Please thoroughly review the following artifact files (READ-ONLY — review them, do not modify them):
 ${artifactList}
 
 ${contextBlock(projectRoot)}
 ${prior}
-Review the artifacts for: inconsistencies between artifacts, missing edge cases or error
-handling, ambiguous or contradictory requirements, and violations of the project conventions.
+Review the artifacts for: inconsistencies between artifacts, missing edge cases or error handling,
+ambiguous or contradictory requirements, and violations of the project conventions. Evaluate them for
+logical or semantic errors in light of the goals the artifacts themselves state, in the context of this project.
 
-Write your findings to a NEW file named "review-findings-${round}.md" in your CURRENT WORKING
-DIRECTORY (not in the project, not in the change folder). Use exactly this format:
+Write your findings to a NEW file named "review-findings-${round}.md" in your CURRENT WORKING DIRECTORY
+(not in the project, not in the change folder). The file MUST BEGIN with the frontmatter block below — its
+very first line is "---", with no title or other text before it. Use exactly this format:
 
 ---
 issues-found: <integer; 0 if none>
@@ -1051,7 +1058,12 @@ is-solved: false
 <description, naming which artifact it appears in>
 
 Repeat the "## Issue N" block for every issue, each starting with "is-solved: false".
-If there are no issues, write "issues-found: 0" and include no issue sections.`;
+If there are no issues, write "issues-found: 0" and include no issue sections.
+
+Write each issue's description so it is specific and unambiguous — name the artifact it appears in, point to
+the exact location, and explain why it is a problem — so that both the proposer agent and a human reader can
+act on it without guessing. This clarity guidance applies to your prose; keep the frontmatter and the
+"## Issue N" / "is-solved:" lines exactly as specified above so the harness can parse them.`;
     },
 };
 
@@ -1059,7 +1071,7 @@ export const ProposerAgent: AgentConfig = {
     role: 'proposer',
     buildPrompt({ projectRoot, artifactRelPaths, round }) {
         const artifactList = artifactRelPaths.map((a) => `- ${a}`).join('\n');
-        return `You are an expert technical writer and software architect.
+        return `Please thoroughly evaluate the reviewer's findings and address every issue they raise.
 
 Your CURRENT WORKING DIRECTORY contains writable copies of the artifacts to revise:
 ${artifactList}
@@ -1068,21 +1080,29 @@ It also contains the reviewer's findings: review-findings-${round}.md
 
 ${contextBlock(projectRoot)}
 
-Address every issue in review-findings-${round}.md whose "is-solved" is false, by editing the
-artifact copies in your working directory.
+review-findings-${round}.md contains a reviewer agent's findings — design, consistency, and
+correctness problems it identified in the artifacts. For each issue whose "is-solved" is false,
+evaluate it and apply the fix its description calls for, editing the artifact copies in your
+working directory. If you judge an issue to be invalid, you may leave it unfixed and explain why
+in its resolution (below) rather than forcing a change.
 
 Then update review-findings-${round}.md in your working directory:
 - For each issue you fixed, change its "is-solved: false" to "is-solved: true".
 - Under each issue add a line: "**Resolution (proposer):** <what you changed, or why you did not fix it>".
 - When your pass is complete, change the frontmatter "status: open" to "status: addressed".
-- Do NOT change "issues-found", and do NOT alter the reviewer's issue titles or descriptions.
+- Do NOT change "issues-found" — it records how many issues this review found and stays fixed even as
+  you resolve them; it is not a live count of what remains. Also do not alter the reviewer's issue titles or descriptions.
+
+When you revise the artifacts, write clearly, precisely, and consistently, so that a downstream reviewer
+agent and a human reader arrive at the same unambiguous understanding. Do not sacrifice any file's required
+structure for style — in particular, preserve the findings file's frontmatter and "is-solved:" lines exactly.
 
 Only edit files inside your working directory. Do not create or modify any other files.`;
     },
 };
 ```
 
-- [ ] **Step 2: Typecheck**
+- [X] **Step 2: Typecheck**
 
 Run: `npm run typecheck`
 
@@ -1178,7 +1198,7 @@ export async function runProposeHarness(opts: HarnessOptions): Promise<void> {
         const status = parseStatus(latest);
         const issues = parseIssuesFound(latest);
         if (status === 'open' && issues === 0) {
-            printSummary(round, artifacts);
+            printSummary(changeDir, round, artifacts);
             return;
         }
         if (status === 'open') {
@@ -1213,7 +1233,7 @@ export async function runProposeHarness(opts: HarnessOptions): Promise<void> {
                 process.exit(1);
             }
             if (parseIssuesFound(readFileSync(findingsPath, 'utf8')) === 0) {
-                printSummary(round, artifacts);
+                printSummary(changeDir, round, artifacts);
                 return;
             }
             phase = 'proposer';
@@ -1239,18 +1259,38 @@ export async function runProposeHarness(opts: HarnessOptions): Promise<void> {
         }
     }
 
-    console.log(`⚠ csi-opsx propose: reached max rounds (${maxRounds}). Review the artifacts manually.`);
+    const counts = issuesPerRound(changeDir, maxRounds);
+    console.log([
+        `⚠ csi-opsx propose: reached max rounds (${maxRounds}) without converging to 0 issues.`,
+        `  Issues found per round: ${counts.join(', ')}`,
+        `  Review history: ${Array.from({ length: maxRounds }, (_, i) => `review-findings-${i + 1}.md`).join(', ')}`,
+        '  Review the artifacts and the findings files manually.',
+    ].join('\n'));
 }
 
-function printSummary(rounds: number, artifacts: string[]): void {
+function printSummary(changeDir: string, rounds: number, artifacts: string[]): void {
     const findingFiles = Array.from({ length: rounds }, (_, i) => `review-findings-${i + 1}.md`);
+    const counts = issuesPerRound(changeDir, rounds);
     console.log([
         '✓ csi-opsx propose complete',
         `  Rounds: ${rounds}`,
         '  Final review: 0 issues found',
+        `  Issues found per round: ${counts.join(', ')}`,
         `  Artifacts: ${artifacts.join(', ')}`,
         `  Review history: ${findingFiles.join(', ')}`,
     ].join('\n'));
+}
+
+// Each round's reviewer records its own issues-found; reading them in sequence gives the
+// convergence trace (e.g. 6, 4, 2). Surfaced on the max-rounds exit so a human can see whether
+// the loop was still making progress when it stopped. existsSync guards any missing round.
+function issuesPerRound(changeDir: string, rounds: number): number[] {
+    const counts: number[] = [];
+    for (let r = 1; r <= rounds; r++) {
+        const path = getFindingsPath(changeDir, r);
+        if (existsSync(path)) counts.push(parseIssuesFound(readFileSync(path, 'utf8')));
+    }
+    return counts;
 }
 ```
 
