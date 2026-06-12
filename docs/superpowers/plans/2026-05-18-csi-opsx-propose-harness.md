@@ -1108,7 +1108,7 @@ Run: `npm run typecheck`
 
 Expected: no type errors.
 
-- [ ] **Step 3: Commit**
+- [X] **Step 3: Commit**
 
 ```bash
 git add src/commands/propose/agents.ts
@@ -1123,7 +1123,7 @@ git commit -m "feat: reviewer/proposer prompt builders (is-solved format, least-
 - Rework: `src/commands/propose/harness.ts`
 - Modify: `src/bin/cli.ts`
 
-- [ ] **Step 1: Replace src/commands/propose/harness.ts**
+- [X] **Step 1: Replace src/commands/propose/harness.ts**
 
 ```ts
 import { readFileSync, existsSync } from 'fs';
@@ -1294,7 +1294,7 @@ function issuesPerRound(changeDir: string, rounds: number): number[] {
 }
 ```
 
-- [ ] **Step 2: Update `src/bin/cli.ts`**
+- [X] **Step 2: Update `src/bin/cli.ts`**
 
 Replace the `HarnessRunner` type, the `HARNESS_RUNNERS` map entry, and the `run` command. Use `HarnessOptions` as the runner's parameter type so `changeName`/`maxRounds` stay in sync:
 
@@ -1335,7 +1335,7 @@ Notes:
 - The `(v) => parseInt(v, 10)` third arg to `.option(...)` coerces the raw string to a number before the action sees it.
 - `--max-rounds` is `.option` (not required); omitted → `undefined` → harness uses its default.
 
-- [ ] **Step 3: Typecheck**
+- [X] **Step 3: Typecheck**
 
 Run: `npm run typecheck`
 

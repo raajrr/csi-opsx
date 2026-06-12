@@ -4,10 +4,11 @@ import { spawnSync } from 'child_process';
 import { join, dirname} from 'path';
 import { fileURLToPath} from 'url';
 import pkg from '../../package.json' with { type: 'json'};
-import {COMMAND_NAMES, CommandName} from "../lib/types.js";
-import {getConfiguredTools} from "../lib/tool-detection.js";
-import {TOOL_DIRS} from "../lib/tools.js";
-import {installCommands, installSkills, installThirdPartySkills} from "../lib/install.js";
+import { COMMAND_NAMES, CommandName } from "../lib/types.js";
+import { getConfiguredTools } from "../lib/tool-detection.js";
+import {  TOOL_DIRS } from "../lib/tools.js";
+import { installCommands, installSkills, installThirdPartySkills } from "../lib/install.js";
+import type { HarnessOptions } from "../commands/propose/harness.js";
 
 // The double underscore prefix to dirname is a coding convention borrowed from CommonJS
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -41,9 +42,9 @@ program.command('update')
         installCsiOpsx();
     });
 
-// Async function that takes { workspace, artifacts } and returns nothing.
+// Async function that takes { HarnessOptions } and returns nothing.
 // HarnessRunner is the type alias (similar to defining a Java functional interface)
-type HarnessRunner = (opts: { workspace: string; artifacts: string[] }) => Promise<void>;
+type HarnessRunner = (opts: HarnessOptions) => Promise<void>;
 // Partial<Record...> because we only want entries for commands (CommandNames) for
 // which this needs to be called.
 const HARNESS_RUNNERS: Partial<Record<CommandName, HarnessRunner>> = {
@@ -57,17 +58,19 @@ program
     .command('run')
     .description('Internal: run a harnessed command (called by skills via Bash)')
     .requiredOption('--command <name>', 'command to run (propose)')
-    .requiredOption('--workspace <path>', 'project workspace path')
-    .requiredOption('--artifacts <csv>', 'comma-separated artifact relative paths')
+    .requiredOption('--workspace <path>', 'project root path')
+    .requiredOption('--change <name>', 'name of the change folder under openspec/changes/')
+    .option('--max-rounds <n>', 'maximum reviewer→proposer rounds (default 5)', (v) => parseInt(v, 10))
     .action(async (opts) => {
         const runner = HARNESS_RUNNERS[opts.command as CommandName];
         if (!runner) {
-            console.error(`Unknown commandL ${opts.command}`);
+            console.error(`Unknown command ${opts.command}`);
             process.exit(1);
         }
         await runner({
             workspace: opts.workspace,
-            artifacts: (opts.artifacts as string).split(',').map((a) => a.trim()),
+            changeName: opts.change,
+            maxRounds: opts.maxRounds,
         });
     });
 
