@@ -1356,7 +1356,7 @@ git commit -m "feat: propose harness loop over a change folder; --change/--max-r
 - Modify: `src/commands/propose/SKILL.md`
 - Create: `src/commands/propose/__tests__/harness.test.ts`
 
-- [ ] **Step 1: Update `src/commands/propose/SKILL.md`**
+- [X] **Step 1: Update `src/commands/propose/SKILL.md`**
 
 Replace the artifact-snapshot/diff steps with the change-name cascade + empty-guard, and the invocation block. The skill's run step becomes:
 
