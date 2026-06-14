@@ -1380,7 +1380,7 @@ Replace the artifact-snapshot/diff steps with the change-name cascade + empty-gu
    append `--max-rounds=<integer>`. Otherwise omit it (harness default is 5).
 ````
 
-- [ ] **Step 2: Write harness integration tests (mocked runner)**
+- [X] **Step 2: Write harness integration tests (mocked runner)**
 
 Create `src/commands/propose/__tests__/harness.test.ts`:
 
@@ -1539,13 +1539,13 @@ describe('runProposeHarness', () => {
 });
 ```
 
-- [ ] **Step 3: Run the full unit suite + typecheck**
+- [X] **Step 3: Run the full unit suite + typecheck**
 
 Run: `npm test && npm run typecheck`
 
 Expected: PASS — all unit tests (permissions, cli, workspace, loop, artifacts, harness) pass; the real-`claude` sandbox test is skipped unless `claude` is installed; no type errors.
 
-- [ ] **Step 4: Full build**
+- [X] **Step 4: Full build**
 
 Run: `npm run build`
 
