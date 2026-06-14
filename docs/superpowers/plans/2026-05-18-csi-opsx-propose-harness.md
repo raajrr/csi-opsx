@@ -1551,7 +1551,7 @@ Run: `npm run build`
 
 Expected: `dist/` built with no errors.
 
-- [ ] **Step 5: Commit**
+- [X] **Step 5: Commit**
 
 ```bash
 git add src/commands/propose/SKILL.md src/commands/propose/__tests__/harness.test.ts
@@ -1567,7 +1567,7 @@ Defense-in-depth. The `Write`/`Edit` deny is tool-specific, so the one path-agno
 **Files:**
 - Modify: `src/lib/runner/claude/__tests__/sandbox.integration.test.ts`
 
-- [ ] **Step 1: Add a Bash-bypass scenario inside the existing `describe.skipIf(!claudeAvailable)` block**
+- [X] **Step 1: Add a Bash-bypass scenario inside the existing `describe.skipIf(!claudeAvailable)` block**
 
 ```ts
   it('does not let the agent bypass the deny via the Bash tool', async () => {
@@ -1588,13 +1588,13 @@ Defense-in-depth. The `Write`/`Edit` deny is tool-specific, so the one path-agno
   }, 180_000);
 ```
 
-- [ ] **Step 2: Run (only meaningful with `claude` installed)**
+- [X] **Step 2: Run (only meaningful with `claude` installed)**
 
 Run: `npx vitest run src/lib/runner/claude/__tests__/sandbox.integration.test.ts`
 
 Expected: PASS (or SKIPPED if `claude` is absent).
 
-- [ ] **Step 3: Commit**
+- [X] **Step 3: Commit**
 
 ```bash
 git add src/lib/runner/claude/__tests__/sandbox.integration.test.ts
