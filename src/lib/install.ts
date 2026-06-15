@@ -46,9 +46,9 @@ export function installThirdPartySkills(projectRoot: string,
                                         skillsSourceDir: string):void{
     if(!existsSync(skillsSourceDir)){ return; }
     for (const skillName of readdirSync(skillsSourceDir)){
-        // eg: /dist/skills/grill-with-docs
+        // eg: /dist/skills/grill-me
         const srcDir = join(skillsSourceDir, skillName);
-        // eg: <project-root>/.claude/skills/grill-with-docs
+        // eg: <project-root>/.claude/skills/grill-me
         const destDir = join(projectRoot, toolDir, SKILLS_SUBDIR, skillName);
         mkdirSync(destDir, { recursive: true });
         for(const file of readdirSync(srcDir)){

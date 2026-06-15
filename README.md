@@ -81,6 +81,27 @@ round (the convergence trace), and whether it converged or hit the round limit. 
 revised artifacts and the `review-findings-N.md` files are left in your change folder for
 inspection.
 
+## Customising a command's behaviour with skills
+
+csi-opsx is a thin wrapper, so each command's behaviour is customisable by attaching
+**skills** — small markdown instruction files an agent loads on demand. The skills ship
+bundled in the package and install alongside the slash commands.
+
+To give a command a skill:
+
+1. Drop the skill into `src/skills/<skill-name>/`. It must contain a `SKILL.md` with
+   `name` and `description` frontmatter (the `description` is what the agent matches on to
+   load it).
+2. Register it in that command's `## Skills` section in `src/commands/<command>/SKILL.md`
+   — just list the skill's `name`.
+3. Rebuild (`npm run build`) and re-run `csi-opsx init` (or `csi-opsx update`) to install
+   it.
+
+The bundled example is the explore phase: `src/commands/explore/SKILL.md` lists the
+[`grill-me`](https://github.com/mattpocock/skills/tree/main/skills/productivity/grill-me)
+skill, so `/csi-opsx:explore` runs an investigative session that also relentlessly grills
+your plan. Swap in a different skill — or add your own — to change that behaviour.
+
 ## Commands
 
 | Command | Purpose |

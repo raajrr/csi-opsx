@@ -7,8 +7,6 @@ import { installSkills, installCommands, installThirdPartySkills } from '../inst
 const EXPLORE_SKILL = '# Explore Skill';
 const PROPOSE_SKILL = '# Propose Skill';
 const GRILL_SKILL   = '# Grill';
-const GRILL_ADR     = '# ADR';
-const GRILL_CONTEXT = '# Context';
 
 describe('install', () => {
     // The directory of the project in which csi-opsx will be initialized.
@@ -116,20 +114,16 @@ describe('install', () => {
 
     describe('installThirdPartySkills', () => {
         it('copies all files from each skill directory to toolDir/skills/{name}/', () => {
-            // Create a directory for grill-with-docs
-            mkdirSync(join(thirdPartyDir, 'grill-with-docs'), { recursive: true });
-            // Create the three grill-with-docs files (resembling the actual grill-with-docs structure)
-            writeFileSync(join(thirdPartyDir, 'grill-with-docs', 'SKILL.md'), GRILL_SKILL);
-            writeFileSync(join(thirdPartyDir, 'grill-with-docs', 'ADR-FORMAT.md'), GRILL_ADR);
-            writeFileSync(join(thirdPartyDir, 'grill-with-docs', 'CONTEXT-FORMAT.md'), GRILL_CONTEXT);
+            // Create a directory for grill-me
+            mkdirSync(join(thirdPartyDir, 'grill-me'), { recursive: true });
+            // Create the grill-me files (resembling the actual grill-me structure)
+            writeFileSync(join(thirdPartyDir, 'grill-me', 'SKILL.md'), GRILL_SKILL);
             // Run installThirdPartySkills
             installThirdPartySkills(projectDir, '.claude', thirdPartyDir);
             // Path to the directory that should be created.
-            const dest = join(projectDir, '.claude', 'skills', 'grill-with-docs');
+            const dest = join(projectDir, '.claude', 'skills', 'grill-me');
             // The three files should exist in the destination directory
             expect(existsSync(join(dest, 'SKILL.md'))).toBe(true);
-            expect(existsSync(join(dest, 'ADR-FORMAT.md'))).toBe(true);
-            expect(existsSync(join(dest, 'CONTEXT-FORMAT.md'))).toBe(true);
             // The SKILL.md file should contain the expected content
             expect(readFileSync(join(dest, 'SKILL.md'), 'utf8')).toBe(GRILL_SKILL);
         });

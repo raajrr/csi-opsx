@@ -14,7 +14,7 @@
 ## Goals
 
 - Automate the manual proposer/reviewer cycle that currently follows `/opsx:propose`
-- Add `grill-with-docs` stress-testing to the explore phase
+- Add relentless grilling to the explore phase (Matt Pocock's `grill-me`), delivered through a general per-command skill mechanism so any phase's behavior can be customized by attaching skills
 - Replace `openspec init/update` with `csi-opsx init/update` as the single entry point for the full workflow
 - Be agent-agnostic for skill installation; Claude-first for harness execution with graceful fallback
 - Be extensible: adding new wrapper commands or runner adapters should be low-friction
@@ -79,10 +79,8 @@ csi-opsx/
       workspace.ts          ← temp dir creation, file copying, cleanup
       loop.ts               ← loop controller: reads findings, decides continue/exit
     skills/
-      grill-with-docs/
-        SKILL.md            ← bundled third-party skill (static copy, attribution comment)
-        ADR-FORMAT.md       ← referenced by SKILL.md — must be co-located
-        CONTEXT-FORMAT.md   ← referenced by SKILL.md — must be co-located
+      grill-me/
+        SKILL.md            ← bundled third-party skill (Matt Pocock's grill-me; attribution line)
   dist/                     ← compiled output (gitignored)
     skills/                 ← third-party skill directories copied here by tsup onSuccess
 ```
@@ -103,7 +101,7 @@ csi-opsx/
 }
 ```
 
-`SKILL.md` files are markdown assets — `tsup` is configured to copy them into `dist/` alongside the compiled output so `csi-opsx init` can find them at runtime. The `onSuccess` hook also discovers all directories under `src/skills/` and copies each one wholesale to `dist/skills/`, preserving the directory structure so co-located support files (e.g. `ADR-FORMAT.md`) remain alongside their `SKILL.md`.
+`SKILL.md` files are markdown assets — `tsup` is configured to copy them into `dist/` alongside the compiled output so `csi-opsx init` can find them at runtime. The `onSuccess` hook also discovers all directories under `src/skills/` and copies each one wholesale to `dist/skills/`, preserving the directory structure so any co-located support files a skill ships remain alongside its `SKILL.md`.
 
 ---
 
@@ -152,12 +150,12 @@ Internal subcommand. Called by the `/csi-opsx:propose` skill via Bash. Not inten
 
 ### `/csi-opsx:explore`
 
-Combines `/opsx:explore` and `grill-with-docs` behaviors in a single session. Both are active simultaneously from the start:
+Runs `/opsx:explore` behavior and loads whatever skills its `## Skills` section lists. Today that is Matt Pocock's `grill-me` (see **Skill Customization** for how the mechanism works and why it replaced `grill-with-docs`):
 
-- **Explore behavior:** investigative conversation, no implementation decisions, no artifacts committed by explore itself
-- **Grill behavior:** challenges terminology against existing glossary, proposes canonical terms, stress-tests with concrete scenarios, cross-references stated behavior against actual code
-- **Outputs:** `CONTEXT.md` updated inline; ADRs created only for hard-to-reverse decisions with genuine trade-offs
-- **Transition:** at end of session, surfaces a prompt to run `/csi-opsx:propose`
+- **Explore behavior:** investigative conversation, no implementation decisions, no artifacts committed.
+- **Grilling (via `grill-me`):** a relentless one-question-at-a-time interview that walks each branch of the design tree, recommends an answer per question, and explores the codebase to settle questions it can.
+- **Outputs:** none. Explore is purely conversational and commits nothing. (The earlier `grill-with-docs` skill wrote a `CONTEXT.md` glossary and ADRs inline; that machinery was dropped — it contradicted "no artifacts" and imposed a workflow the phase did not need.)
+- **Transition:** at end of session, surfaces a prompt to run `/csi-opsx:propose`.
 
 No harness, no subprocess, no file access enforcement — purely conversational.
 
@@ -191,6 +189,29 @@ Thin passthrough. Follows `/opsx:apply` behavior. No additional behavior in this
 ### `/csi-opsx:archive`
 
 Thin passthrough. Follows `/opsx:archive` behavior. No additional behavior in this iteration.
+
+---
+
+## Skill Customization
+
+**Added 2026-06-15.** csi-opsx is a thin wrapper, and each command's behavior is meant to be *customizable* by attaching skills — small markdown instruction files an agent loads on demand. This is the mechanism behind explore's grilling, generalized so any phase can be tuned without touching csi-opsx's own code.
+
+**The convention:**
+
+- Skills live flat in `src/skills/<name>/`, are bundled into the package, and install flat to `{toolDir}/skills/<name>/` via `installThirdPartySkills` — exactly as they already did.
+- A command opts into a skill by **naming it** in a `## Skills` section in `src/commands/<command>/SKILL.md`. That `SKILL.md` is both installed as the command's skill *and* baked into the generated slash-command file, so the reference travels with the command.
+- At run time the agent loads the named skill on demand through its Skill tool. Claude Code discovers an installed skill by its `SKILL.md` frontmatter (`name`/`description`), so a flat install plus a named reference is a complete loading path.
+
+**Decision: explicit naming over directory-scanning.** An earlier sketch had each command own a *directory* of skills and load "whatever is present in this command's folder." That was rejected: it would require new install/layout logic to place skills per-command, plus runtime directory-discovery for the agent — machinery that buys nothing over simply naming the skill. Explicit naming reuses the existing flat install and Claude Code's by-name discovery **unchanged** — no `install.ts`, build, or layout changes. The accepted trade-off: adding a skill is two steps (drop it in `src/skills/`, then name it in the command's `## Skills` section) instead of one — more explicit, and far simpler to maintain.
+
+**Scope and limits:**
+
+- Only `/csi-opsx:explore` ships a skill today — `grill-me`. `apply`/`archive` stay bare passthroughs (no empty `## Skills` section until they actually have a skill to register). `propose` is excluded: its reviewer→proposer loop *is* its behavior.
+- No per-session selective activation. To disable a skill, remove it from the command's `## Skills` list (or from `src/skills/`). The expectation is roughly one skill per command.
+
+**Departure from `grill-with-docs`.** The explore phase originally bundled Matt Pocock's `grill-with-docs` — the relentless interview *plus* a documentation system (a `CONTEXT.md` glossary and ADRs written inline). It was replaced by his plainer `grill-me` (the interview only), for two reasons: the doc machinery contradicted explore's own rule that it commits no artifacts, and it imposed a specific glossary/ADR workflow the phase did not need. Concretely, `src/skills/grill-with-docs/` (with its `ADR-FORMAT.md`/`CONTEXT-FORMAT.md`) became `src/skills/grill-me/` with a single `SKILL.md`, and `explore/SKILL.md` lost its inline "fallback grilling" block and `Outputs` section. User-facing docs for this live in the README's "Customising a command's behaviour with skills" section.
+
+*Decision record (rationale + rejected alternative): [`open-questions/2026-06-15-skill-customization.md`](../open-questions/2026-06-15-skill-customization.md).*
 
 ---
 
@@ -477,7 +498,8 @@ The command file is a thin entry point that references the skill behavior. The s
 | New harnessed command | Add `src/commands/{name}/SKILL.md`, `harness.ts`, `agents.ts`; wire `run --command={name}` |
 | New runner adapter | Add `src/lib/runner/{name}/` with `cli.ts` (plus any agent-specific helpers like `permissions.ts`, `config.ts`); add detection check in `src/lib/runner/index.ts` |
 | New agent for skill install | Add entry to `src/lib/tools.ts`; add adapter to `src/lib/adapters/` |
-| New third-party skill | Add `src/skills/{name}/` with all skill files and an attribution comment in `SKILL.md`; tsup and install pick it up automatically |
+| New third-party skill | Add `src/skills/{name}/` with all skill files and an attribution line in `SKILL.md`; tsup and install pick it up automatically |
+| Customize a command's behavior | List a bundled skill's `name` in that command's `## Skills` section in `src/commands/{name}/SKILL.md` — see **Skill Customization** |
 
 ---
 
