@@ -1,4 +1,5 @@
-#!/usr/bin/env node // Unix shebang - tells the OS to run the file with Node when executed from the terminal
+#!/usr/bin/env node
+// Unix shebang - tells the OS to run the file with Node when executed from the terminal
 import { Command } from "commander";
 import { spawnSync } from 'child_process';
 import { join, dirname} from 'path';
