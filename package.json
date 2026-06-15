@@ -14,8 +14,8 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "commander": "^12.0.0",
-    "openspec": "latest"
+    "@fission-ai/openspec": "^1.4.1",
+    "commander": "^12.0.0"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",

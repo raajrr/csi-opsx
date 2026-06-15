@@ -1,13 +1,13 @@
 import type { Runner, RunnerResult} from '../../lib/runner/index.js';
 import { resolveRunner } from '../../lib/runner/index.js';
 import type { Workspace } from '../../lib/workspace.js';
-import {cleanupWorkspace, copyBack, createWorkspace, sweepOrphanWorkspaces } from '../../lib/workspace.js';
-import {findLatestFindingsRound, getFindingsPath, parseIssuesFound, parseStatus} from '../../lib/loop.js';
-import {existsSync, readFileSync} from 'fs';
-import {enumerateChangeArtifacts, getChangeDirectory, validateChangeName} from '../../lib/artifacts.js';
-import type {AgentRole} from '../../lib/types.js';
-import {ProposerAgent, ReviewerAgent} from './agents.js';
-import {join} from 'path';
+import { cleanupWorkspace, copyBack, createWorkspace, sweepOrphanWorkspaces } from '../../lib/workspace.js';
+import { findLatestFindingsRound, getFindingsPath, parseIssuesFound, parseStatus } from '../../lib/loop.js';
+import { existsSync, readFileSync } from 'fs';
+import { enumerateChangeArtifacts, getChangeDirectory, validateChangeName } from '../../lib/artifacts.js';
+import type { AgentRole } from '../../lib/types.js';
+import { ProposerAgent, ReviewerAgent } from './agents.js';
+import { join, resolve } from 'path';
 
 export interface HarnessOptions {
     workspace: string;   // project root (the --workspace CLI arg)
@@ -41,7 +41,8 @@ async function runStage(
 }
 
 export async function runProposeHarness(opts: HarnessOptions): Promise<void> {
-    const { workspace: projectRoot, changeName, maxRounds = DEFAULT_MAX_ROUNDS } = opts;
+    const  projectRoot = resolve(opts.workspace);
+    const { changeName, maxRounds = DEFAULT_MAX_ROUNDS } = opts;
 
     validateChangeName(changeName);
     const changeDir = getChangeDirectory(projectRoot, changeName);

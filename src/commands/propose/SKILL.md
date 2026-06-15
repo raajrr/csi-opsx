@@ -75,7 +75,7 @@ If none are found:
    ```
 
    If the user invoked `/csi-opsx:propose` with an integer (e.g. `/csi-opsx:propose 3`),
-   append `--max-rounds=<integer>`. Otherwise omit it (harness default is 5).
+   append `--max-rounds=<integer>`. Otherwise, omit it (harness default is 5).
 
 Wait for the harness to complete. Surface the exit summary to the session.
 
