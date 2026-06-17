@@ -2,7 +2,7 @@
 import {copyFileSync, mkdirSync, existsSync, readdirSync, rmSync } from 'fs';
 import { join } from 'path';
 
-const COMMANDS = ['explore', 'propose', 'apply', 'archive'] as const;
+const COMMANDS = ['explore', 'propose', 'apply', 'archive', 'review'] as const;
 
 export default defineConfig({
     entry: { 'bin/cli': 'src/bin/cli.ts'},

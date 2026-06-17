@@ -145,7 +145,7 @@ export async function runProposeHarness(opts: HarnessOptions): Promise<void> {
     }
     const counts = issuesPerRound(changeDir, maxRounds);
     console.log([
-        `⚠ csi-opsx propose: reached max rounds (${maxRounds}) without converging to 0 issues.`,
+        `⚠ Review: reached max rounds (${maxRounds}) without converging to 0 issues.`,
         `  Issues found per round: ${counts.join(', ')}`,
         `  Review history: ${Array.from({ length: maxRounds }, (_, i) => `review-findings-${i + 1}.md`).join(', ')}`,
         '  Review the artifacts and the findings files manually.',
@@ -157,7 +157,7 @@ function printSummary (changeDir: string, rounds: number, artifacts: string[]): 
         .from({ length: rounds}, (_, r) => `review-findings-${r + 1}.md`);
     const counts = issuesPerRound(changeDir, rounds);
     console.log([
-        '✓ csi-opsx propose complete',
+        '✓ Review complete',
         `  Rounds: ${rounds}`,
         '  Final review: 0 issues found',
         `  Issues found per round: ${counts.join(', ')}`,

@@ -63,13 +63,17 @@ const HARNESS_RUNNERS: Partial<Record<CommandName, HarnessRunner>> = {
     propose: async (opts) => {
         const { runProposeHarness } = await import('../commands/propose/harness.js');
         await runProposeHarness(opts);
+    },
+    review: async (opts) => {
+        const {runProposeHarness} = await import('../commands/propose/harness.js');
+        await runProposeHarness(opts);
     }
 };
 
 program
     .command('run')
     .description('Internal: run a harnessed command (called by skills via Bash)')
-    .requiredOption('--command <name>', 'command to run (propose)')
+    .requiredOption('--command <name>', 'command to run (propose | review)')
     .requiredOption('--workspace <path>', 'project root path')
     .requiredOption('--change <name>', 'name of the change folder under openspec/changes/')
     .option('--max-rounds <n>', 'maximum reviewer→proposer rounds (default 5)', (v) => parseInt(v, 10))

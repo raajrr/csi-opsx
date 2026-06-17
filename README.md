@@ -15,6 +15,8 @@ clean (or a round limit is hit).
   the reviewer reports zero issues or `--max-rounds` is reached. Each agent runs in a
   temporary workspace where the project is read-only and only the change artifacts are
   writable, so a run can never corrupt your project.
+- `review` — the same reviewer→proposer loop as `propose`, run on a change whose artifacts
+    already exist (no generation). For re-reviewing or resuming a change.
 
 ## Prerequisites
 
@@ -55,8 +57,8 @@ csi-opsx init
 
 This runs `openspec init` (which prompts you to pick your AI tool) and then installs the
 csi-opsx skills and slash commands for the detected agent. For Claude Code, the commands
-become available as `/csi-opsx:explore`, `/csi-opsx:propose`, `/csi-opsx:apply`, and
-`/csi-opsx:archive`.
+become available as `/csi-opsx:explore`, `/csi-opsx:propose`, `/csi-opsx:review`,
+`/csi-opsx:apply`, and `/csi-opsx:archive`.
 
 If you upgrade csi-opsx later, re-sync the installed skills with:
 
@@ -80,6 +82,21 @@ When the loop finishes it prints a summary: the number of rounds, the issue coun
 round (the convergence trace), and whether it converged or hit the round limit. The
 revised artifacts and the `review-findings-N.md` files are left in your change folder for
 inspection.
+
+
+### Reviewing an existing change
+
+```
+/csi-opsx:review <change-name>
+```
+
+`review` runs the same automated review loop as `propose`, but **skips artifact generation** — use
+it on a change whose artifacts already exist: one you generated earlier, wrote by hand, or left
+behind by a `propose` run that crashed or hit its round cap. If the change doesn't exist or has no
+artifacts, it tells you to run `/csi-opsx:propose` first. Like `propose`, it resumes from any
+existing `review-findings-N.md` and accepts an optional round cap, e.g.
+`/csi-opsx:review <change-name> 3` (the default is 5).
+
 
 ## Customising a command's behaviour with skills
 

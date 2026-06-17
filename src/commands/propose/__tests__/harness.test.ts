@@ -58,7 +58,7 @@ describe('runProposeHarness', () => {
         *  got copied over
         * */
         expect(existsSync(join(changeDir, REVIEW_FINDINGS_1))).toBe(true);
-        expect(log).toHaveBeenCalledWith(expect.stringContaining('csi-opsx propose complete'));
+        expect(log).toHaveBeenCalledWith(expect.stringContaining('Review complete'));
     });
 
     it('runs reviewer -> proposer -> reviewer until 0 issues', async () => {
