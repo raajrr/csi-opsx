@@ -8,7 +8,7 @@
 
 **Tech Stack:** TypeScript (ESM), `tsup` build, `vitest` tests, `commander` CLI. Source in `src/`, compiled to `dist/`.
 
-**Spec:** [`docs/superpowers/specs/2026-06-16-review-command-design.md`](../specs/2026-06-16-review-command-design.md)
+**Spec:** [`docs/superpowers/specs/2026-06-16-review-command-design.md`](../specs/2026-06-16-review-command-design.md) — see its **Decisions** section for the rationale (and rejected alternatives) behind these changes.
 
 ---
 

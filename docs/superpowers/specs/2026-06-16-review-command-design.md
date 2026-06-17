@@ -191,3 +191,37 @@ without regenerating artifacts — the complement to `propose`.
 ## Open Questions
 
 - None.
+
+---
+
+## Decisions
+
+A consolidated record of the choices made while designing this command. Detail lives inline in the
+sections above; this is the quick reference, including the alternatives we rejected and why.
+
+1. **Reuse `runProposeHarness` unchanged.** `review` and `propose` run the identical engine —
+   `review` only skips the generation step. *Rejected:* a separate review engine/mode; nothing
+   differs at the loop level. (See **Engine — reused**.)
+2. **Full reviewer→proposer loop, not review-only.** `review` auto-fixes via the proposer, exactly
+   like `propose`. *Rejected:* a report-only mode (reviewer writes findings, a human fixes them) —
+   extra code and a new harness path for a workflow `propose` already covers; revisit only if a
+   genuine no-fix audit is ever wanted. (See **Non-Goals**.)
+3. **One static "Review complete" summary, shared by both commands.** The summary block (rounds,
+   issues-per-round, findings history) is intrinsically *review* output, so a single static wording
+   is correct for both. *Rejected:* threading a per-command `commandLabel` parameter — it adds a
+   conditional to a command-agnostic engine for no real benefit. (See **Exit summary wording**.)
+4. **Distinct `--command=review`, mapped to the same harness.** Keeps the two commands cleanly
+   separable and lets them diverge later. *Rejected:* having the `review` SKILL call
+   `--command=propose` (review invoking "propose" is conceptually muddy). (See **Engine — reused**.)
+5. **No `## Skills` section in `review/SKILL.md`.** Like `propose`, the reviewer→proposer loop *is*
+   the behavior, so there is nothing to customize via the skill-attachment mechanism. (See **Behavior**.)
+6. **Change resolution: explicit arg, otherwise always ask.** No single-active auto-pick:
+   auto-selecting "the one change" silently does the wrong thing the moment a second change exists,
+   and `review` mutates artifacts. *Rejected:* `propose`'s single-active auto-pick branch.
+   (See **Relationship to `propose`**.)
+7. **The "nothing to review" guard lives in the SKILL, not the harness.** The SKILL validates the
+   change and points the user at `/csi-opsx:propose`; the harness's own throw stays an internal
+   safety net. *Rejected:* a harness-level user-facing guard. (See **Behavior**.)
+8. **Install and build auto-wire from `COMMAND_NAMES`.** Adding `'review'` to the union/array is
+   enough — the generic adapter and the install loop pick it up with no `install.ts` change.
+   *Rejected:* per-command install logic. (See **File-by-file changes**.)
