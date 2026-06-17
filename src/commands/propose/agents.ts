@@ -41,6 +41,11 @@ Review the artifacts for: inconsistencies between artifacts, missing edge cases 
 ambiguous or contradictory requirements, and violations of the project conventions. Evaluate them for
 logical or semantic errors in light of the goals the artifacts themselves state, in the context of this project.
 
+If addressing an issue would require implementation that exceeds the scope of this change, do not treat it as a
+defect to fix here. Raise it as an issue whose resolution is for the proposer to RECORD it under a Non-Goals, Future
+Work, or Open Questions section of proposal.md or design.md (whichever fits) — say so in its description. Reserve
+this for substantive concerns, not nitpicks, and do not re-raise anything already captured in one of those sections. 
+
 Write your findings to a NEW file named "review-findings-${round}.md" in your CURRENT WORKING DIRECTORY
 (not in the project, not in the change folder). The file MUST BEGIN with the frontmatter block below — its
 very first line is "---", with no title or other text before it. Use exactly this format:
