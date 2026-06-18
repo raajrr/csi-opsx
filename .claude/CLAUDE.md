@@ -19,7 +19,7 @@ npx vitest run src/lib/__tests__/loop.test.ts
 
 ## Architecture
 
-`csi-opsx` is a CLI tool that wraps [OpenSpec](https://npmjs.com/package/openspec) and adds an automated proposer→reviewer loop. The binary entrypoint is `src/bin/cli.ts`, compiled to `dist/bin/cli.js`.
+`csi-opsx` is a CLI tool that wraps [OpenSpec](https://github.com/Fission-AI/OpenSpec) and adds an automated proposer→reviewer loop. The binary entrypoint is `src/bin/cli.ts`, compiled to `dist/bin/cli.js`.
 
 ### Command layout
 
@@ -28,7 +28,7 @@ Each command lives under `src/commands/{name}/` with up to three files:
 - `agents.ts` — agent prompt builders (`ReviewerAgent`, `ProposerAgent`)
 - `harness.ts` — orchestration logic for harnessed commands
 
-`explore`, `apply`, and `archive` are thin passthroughs to OpenSpec behavior. `propose` is the only harnessed command: it runs a reviewer→proposer loop in isolated temp workspaces until the reviewer reports zero issues.
+`explore`, `apply`, and `archive` are thin passthroughs to OpenSpec behavior. `propose` and `review` are the harnessed commands: each runs a reviewer→proposer loop in isolated temp workspaces until the reviewer reports zero issues. `propose` generates the artifacts first (via OpenSpec) and then loops; `review` runs the same loop on a change whose artifacts already exist (no generation).
 
 ### Library modules (`src/lib/`)
 
@@ -49,6 +49,8 @@ Each command lives under `src/commands/{name}/` with up to three files:
 | `install.ts` | `installSkills()`, `installCommands()`, `installThirdPartySkills()` — file installation |
 
 ### Propose harness loop
+
+Both `propose` and `review` drive this loop through the same `runProposeHarness` function, dispatched from `HARNESS_RUNNERS` in `src/bin/cli.ts`. The only difference is upstream in the SKILL.md files: `propose` generates the artifacts first, while `review` runs the loop on artifacts that already exist.
 
 ```
 resolve runner → start round 1
