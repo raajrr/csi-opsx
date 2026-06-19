@@ -40,7 +40,7 @@ async function runStage(
     }
 }
 
-export async function runProposeHarness(opts: HarnessOptions): Promise<void> {
+export async function runReviewHarness(opts: HarnessOptions): Promise<void> {
     const  projectRoot = resolve(opts.workspace);
     const { changeName, maxRounds = DEFAULT_MAX_ROUNDS } = opts;
 

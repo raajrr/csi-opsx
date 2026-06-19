@@ -10,7 +10,7 @@ import { COMMAND_NAMES, CommandName } from "../lib/types.js";
 import { getConfiguredTools } from "../lib/tool-detection.js";
 import {  TOOL_DIRS } from "../lib/tools.js";
 import { installCommands, installSkills, installThirdPartySkills } from "../lib/install.js";
-import type { HarnessOptions } from "../commands/propose/harness.js";
+import type { HarnessOptions } from "../commands/review/harness.js";
 
 // The double underscore prefix to dirname is a coding convention borrowed from CommonJS
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -60,20 +60,16 @@ type HarnessRunner = (opts: HarnessOptions) => Promise<void>;
 // Partial<Record...> because we only want entries for commands (CommandNames) for
 // which this needs to be called.
 const HARNESS_RUNNERS: Partial<Record<CommandName, HarnessRunner>> = {
-    propose: async (opts) => {
-        const { runProposeHarness } = await import('../commands/propose/harness.js');
-        await runProposeHarness(opts);
-    },
     review: async (opts) => {
-        const {runProposeHarness} = await import('../commands/propose/harness.js');
-        await runProposeHarness(opts);
+        const {runReviewHarness} = await import('../commands/review/harness.js');
+        await runReviewHarness(opts);
     }
 };
 
 program
     .command('run')
     .description('Internal: run a harnessed command (called by skills via Bash)')
-    .requiredOption('--command <name>', 'command to run (propose | review)')
+    .requiredOption('--command <name>', 'command to run (review)')
     .requiredOption('--workspace <path>', 'project root path')
     .requiredOption('--change <name>', 'name of the change folder under openspec/changes/')
     .option('--max-rounds <n>', 'maximum reviewer→proposer rounds (default 5)', (v) => parseInt(v, 10))

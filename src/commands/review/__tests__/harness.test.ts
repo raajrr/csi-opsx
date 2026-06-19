@@ -6,7 +6,7 @@ import { tmpdir } from 'os';
 vi.mock('../../../lib/runner/index.js', () => ({ resolveRunner: vi.fn() }));
 
 import { resolveRunner } from '../../../lib/runner/index.js';
-import { runProposeHarness } from '../harness.js';
+import { runReviewHarness } from '../harness.js';
 import {write} from "node:fs";
 
 const CHANGE = 'add-auth';
@@ -40,7 +40,7 @@ describe('runProposeHarness', () => {
     it('prints a notice and exits when no runner is available', async () => {
         vi.mocked(resolveRunner).mockReturnValue(null);
         const log = vi.spyOn(console, 'log');
-        await runProposeHarness({ workspace: projectRoot, changeName: CHANGE});
+        await runReviewHarness({ workspace: projectRoot, changeName: CHANGE});
         expect(log).toHaveBeenCalledWith(expect.stringContaining('No runner available'));
     });
 
@@ -53,7 +53,7 @@ describe('runProposeHarness', () => {
             }),
         });
         const log = vi.spyOn(console, 'log');
-        await runProposeHarness({ workspace: projectRoot, changeName: CHANGE});
+        await runReviewHarness({ workspace: projectRoot, changeName: CHANGE});
         /* Verify that the review findings file that was created in the workspace directory in the mock
         *  got copied over
         * */
@@ -80,7 +80,7 @@ describe('runProposeHarness', () => {
                 return { exitCode: 0, stdout: '', stderr: '' };
             }),
         });
-        await runProposeHarness({ workspace: projectRoot, changeName: CHANGE});
+        await runReviewHarness({ workspace: projectRoot, changeName: CHANGE});
         expect(n).toBe(3);
         expect(readFileSync(join(changeDir, PROPOSAL_MD), 'utf8')).toBe(UPDATED_PROPOSAL_CONTENT);
         expect(existsSync(join(changeDir, REVIEW_FINDINGS_1))).toBe(true);
@@ -100,7 +100,7 @@ describe('runProposeHarness', () => {
                 return { exitCode: 0, stdout: '', stderr: ''};
             }),
         });
-        await runProposeHarness({ workspace: projectRoot, changeName: CHANGE});
+        await runReviewHarness({ workspace: projectRoot, changeName: CHANGE});
         expect(n).toBe(1);
         expect(existsSync(join(changeDir, REVIEW_FINDINGS_2))).toBe(true);
     });
@@ -125,7 +125,7 @@ describe('runProposeHarness', () => {
                 return { exitCode: 0, stdout: '', stderr: '' };
             }),
         });
-        await runProposeHarness({ workspace: projectRoot, changeName: CHANGE});
+        await runReviewHarness({ workspace: projectRoot, changeName: CHANGE});
         expect(n).toBe(2);
         expect(existsSync(join(changeDir, REVIEW_FINDINGS_2))).toBe(true);
     });
@@ -150,7 +150,7 @@ describe('runProposeHarness', () => {
         const exitSpy = vi.spyOn(process, 'exit')
             // And replace the real process.exit with a mock implementation so that instead of aborting it throws an Error
             .mockImplementation(((): never => { throw new Error('exit'); }));
-        await runProposeHarness({ workspace: projectRoot, changeName: CHANGE}).catch(() => {});
+        await runReviewHarness({ workspace: projectRoot, changeName: CHANGE}).catch(() => {});
         expect(readFileSync(join(changeDir, PROPOSAL_MD), 'utf8')).toBe(PROPOSAL_CONTENT); // unchanged
         // Removes the mocked process.exit and puts the real one back in place
         exitSpy.mockRestore();
@@ -176,7 +176,7 @@ describe('runProposeHarness', () => {
         });
         const log = vi.spyOn(console, 'log');
         // Run the review -> propose loop for only 2 rounds
-        await runProposeHarness({ workspace: projectRoot, changeName: CHANGE, maxRounds: 2});
+        await runReviewHarness({ workspace: projectRoot, changeName: CHANGE, maxRounds: 2});
         expect(n).toBe(4); // 2 * (review -> propose rounds)
         expect(log).toHaveBeenCalledWith(expect.stringContaining('reached max rounds'));
     });
