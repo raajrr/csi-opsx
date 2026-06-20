@@ -8,22 +8,21 @@ clean (or a round limit is hit).
 
 ## What it does
 
-- `explore`, `apply`, `archive` — thin passthroughs to OpenSpec behaviour.
-- `propose` — the harnessed command. It runs an AI reviewer against your change
-  artifacts (`proposal.md`, `design.md`, `tasks.md`, `specs/*/spec.md`), feeds the
-  findings to an AI proposer that revises the artifacts, and re-reviews — looping until
+- `explore`, `propose`, `apply`, `archive` — thin passthroughs to OpenSpec behaviour.
+  `propose` generates your change artifacts (`proposal.md`, `design.md`, `tasks.md`,
+  `specs/*/spec.md`) and then suggests running `review` on them.
+- `review` — the harnessed command. It runs an AI reviewer against your change artifacts,
+  feeds the findings to an AI proposer that revises them, and re-reviews — looping until
   the reviewer reports zero issues or `--max-rounds` is reached. Each agent runs in a
   temporary workspace where the project is read-only and only the change artifacts are
   writable, so a run can never corrupt your project.
-- `review` — the same reviewer→proposer loop as `propose`, run on a change whose artifacts
-    already exist (no generation). For re-reviewing or resuming a change.
 
 ## Prerequisites
 
 - **Node.js 20.19+** (required by the bundled OpenSpec).
-- **A supported AI runner** for the propose loop — currently **Claude Code** (`claude`
-  on your `PATH`). Without it, `propose` still generates artifacts via OpenSpec, but the
-  automated review loop is skipped.
+- **A supported AI runner** for the review loop — currently **Claude Code** (`claude`
+  on your `PATH`). Without it, `propose` still generates artifacts via OpenSpec, but
+  `review` cannot run the automated loop.
 
 OpenSpec itself is **bundled** — csi-opsx ships and runs its own pinned copy of the
 [`@fission-ai/openspec`](https://github.com/Fission-AI/OpenSpec) CLI, so there's no
@@ -68,15 +67,17 @@ csi-opsx update
 
 ## Usage
 
-Inside your AI tool, drive the workflow with the slash commands. The headline one:
+Inside your AI tool, drive the workflow with the slash commands. The usual two steps:
 
 ```
 /csi-opsx:propose <change-name>
+/csi-opsx:review <change-name>
 ```
 
-This generates the change artifacts (via OpenSpec's propose behaviour) and then runs the
-automated review loop over `openspec/changes/<change-name>/`. Pass an integer to cap the
-rounds, e.g. `/csi-opsx:propose <change-name> 3` (the default is 5).
+`propose` generates the change artifacts (via OpenSpec's propose behaviour) under
+`openspec/changes/<change-name>/`, then suggests running `review`. `review` drives the
+automated reviewer→proposer loop over those artifacts, and accepts an optional round cap,
+e.g. `/csi-opsx:review <change-name> 3` (the default is 5).
 
 When the loop finishes it prints a summary: the number of rounds, the issue count per
 round (the convergence trace), and whether it converged or hit the round limit. The
@@ -90,12 +91,10 @@ inspection.
 /csi-opsx:review <change-name>
 ```
 
-`review` runs the same automated review loop as `propose`, but **skips artifact generation** — use
-it on a change whose artifacts already exist: one you generated earlier, wrote by hand, or left
-behind by a `propose` run that crashed or hit its round cap. If the change doesn't exist or has no
-artifacts, it tells you to run `/csi-opsx:propose` first. Like `propose`, it resumes from any
-existing `review-findings-N.md` and accepts an optional round cap, e.g.
-`/csi-opsx:review <change-name> 3` (the default is 5).
+`review` is also how you re-review or resume a change whose artifacts already exist — one you
+generated in an earlier session, wrote by hand, or left behind by a `review` run that crashed or hit
+its round cap. If the change doesn't exist or has no artifacts, it tells you to run
+`/csi-opsx:propose` first. It resumes from any existing `review-findings-N.md`.
 
 
 ## Customising a command's behaviour with skills
@@ -125,7 +124,7 @@ your plan. Swap in a different skill — or add your own — to change that beha
 |---|---|
 | `csi-opsx init` | Run `openspec init` and install csi-opsx skills/commands. |
 | `csi-opsx update` | Re-run `openspec update` and reinstall csi-opsx skills. |
-| `csi-opsx run` | Internal — invoked by the propose skill to drive the harness. Not meant to be run by hand. |
+| `csi-opsx run` | Internal — invoked by the review skill to drive the harness. Not meant to be run by hand. |
 
 The user-facing surface is the slash commands installed by `init`, not the CLI directly.
 
