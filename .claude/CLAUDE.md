@@ -28,7 +28,7 @@ Each command lives under `src/commands/{name}/` with up to three files:
 - `agents.ts` — agent prompt builders (`ReviewerAgent`, `ProposerAgent`)
 - `harness.ts` — orchestration logic for harnessed commands
 
-`explore`, `apply`, and `archive` are thin passthroughs to OpenSpec behavior. `propose` and `review` are the harnessed commands: each runs a reviewer→proposer loop in isolated temp workspaces until the reviewer reports zero issues. `propose` generates the artifacts first (via OpenSpec) and then loops; `review` runs the same loop on a change whose artifacts already exist (no generation).
+`explore`, `propose`, `apply`, and `archive` are thin passthroughs to OpenSpec behavior (each exposes a `## Skills` hook for customization). `review` is the harnessed command: it runs a reviewer→proposer loop in isolated temp workspaces until the reviewer reports zero issues. `propose` generates the artifacts (via OpenSpec) and then suggests running `review`; `review` drives the loop over a change whose artifacts already exist.
 
 ### Library modules (`src/lib/`)
 
@@ -48,9 +48,9 @@ Each command lives under `src/commands/{name}/` with up to three files:
 | `adapters/index.ts` | adapter registry + `getAdapter()` lookup |
 | `install.ts` | `installSkills()`, `installCommands()`, `installThirdPartySkills()` — file installation |
 
-### Propose harness loop
+### Review harness loop
 
-Both `propose` and `review` drive this loop through the same `runProposeHarness` function, dispatched from `HARNESS_RUNNERS` in `src/bin/cli.ts`. The only difference is upstream in the SKILL.md files: `propose` generates the artifacts first, while `review` runs the loop on artifacts that already exist.
+`review` drives this loop through `runReviewHarness` (`src/commands/review/harness.ts`), dispatched from `HARNESS_RUNNERS` in `src/bin/cli.ts`. `propose` no longer drives the harness — it generates artifacts and hands off to `review`, which runs the loop on artifacts that already exist.
 
 ```
 resolve runner → start round 1
