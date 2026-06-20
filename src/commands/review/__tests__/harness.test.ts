@@ -7,11 +7,10 @@ vi.mock('../../../lib/runner/index.js', () => ({ resolveRunner: vi.fn() }));
 
 import { resolveRunner } from '../../../lib/runner/index.js';
 import { runReviewHarness } from '../harness.js';
-import {write} from "node:fs";
 
 const CHANGE = 'add-auth';
 
-describe('runProposeHarness', () => {
+describe('runReviewHarness', () => {
     let projectRoot: string;
     let changeDir: string;
 
