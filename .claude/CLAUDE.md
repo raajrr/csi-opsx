@@ -86,6 +86,8 @@ The harness reads `issues-found` and `status` via regex. `status: open` + `issue
 
 On startup the harness scans for `review-findings-*.md` files, finds the highest round, and inspects its `status` to determine whether to start the reviewer or proposer for that round.
 
+`--max-rounds` is a per-invocation budget measured from the resume point, not an absolute ceiling: `endRound = startRound - 1 + maxRounds`, where `startRound` is the resume-adjusted round (1 on a fresh run). So a fresh run behaves as an absolute cap (rounds `1..maxRounds`), and a resume runs `maxRounds` more rounds from where the last pass stopped.
+
 ### Skill and command installation (`csi-opsx init`)
 
 1. Delegates to `openspec init` (interactive agent selection)

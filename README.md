@@ -4,7 +4,7 @@ A CLI wrapper around [OpenSpec](https://github.com/Fission-AI/OpenSpec) that add
 automated **reviewer → proposer loop** to the spec-writing phase. You write a change
 proposal; csi-opsx repeatedly has an AI agent review the artifacts and a second agent
 address the findings — in isolated, sandboxed workspaces — until the review comes back
-clean (or a round limit is hit).
+clean (or it runs out its round budget).
 
 ## What it does
 
@@ -13,9 +13,9 @@ clean (or a round limit is hit).
   `specs/*/spec.md`) and then suggests running `review` on them.
 - `review` — the harnessed command. It runs an AI reviewer against your change artifacts,
   feeds the findings to an AI proposer that revises them, and re-reviews — looping until
-  the reviewer reports zero issues or `--max-rounds` is reached. Each agent runs in a
-  temporary workspace where the project is read-only and only the change artifacts are
-  writable, so a run can never corrupt your project.
+  the reviewer reports zero issues or it runs out its `--max-rounds` budget for that
+  run. Each agent runs in a temporary workspace where the project is read-only and only
+  the change artifacts are writable, so a run can never corrupt your project.
 
 ## Prerequisites
 
@@ -76,11 +76,12 @@ Inside your AI tool, drive the workflow with the slash commands. The usual two s
 
 `propose` generates the change artifacts (via OpenSpec's propose behaviour) under
 `openspec/changes/<change-name>/`, then suggests running `review`. `review` drives the
-automated reviewer→proposer loop over those artifacts, and accepts an optional round cap,
-e.g. `/csi-opsx:review <change-name> 3` (the default is 5).
+automated reviewer→proposer loop over those artifacts, and accepts an optional round budget,
+e.g. `/csi-opsx:review <change-name> 3` runs up to 3 rounds this pass (the default is 5). On a
+resume, the number is how many *more* rounds to run beyond those already completed.
 
 When the loop finishes it prints a summary: the number of rounds, the issue count per
-round (the convergence trace), and whether it converged or hit the round limit. The
+round (the convergence trace), and whether it converged or ran out its round budget. The
 revised artifacts and the `review-findings-N.md` files are left in your change folder for
 inspection.
 
@@ -92,9 +93,10 @@ inspection.
 ```
 
 `review` is also how you re-review or resume a change whose artifacts already exist — one you
-generated in an earlier session, wrote by hand, or left behind by a `review` run that crashed or hit
-its round cap. If the change doesn't exist or has no artifacts, it tells you to run
-`/csi-opsx:propose` first. It resumes from any existing `review-findings-N.md`.
+generated in an earlier session, wrote by hand, or left behind by a `review` run that crashed or ran
+out its round budget. If the change doesn't exist or has no artifacts, it tells you to run
+`/csi-opsx:propose` first. It resumes from any existing `review-findings-N.md`, and re-running it runs
+more rounds from where the last pass stopped — pass an integer to control how many.
 
 
 ## Customising a command's behaviour with skills

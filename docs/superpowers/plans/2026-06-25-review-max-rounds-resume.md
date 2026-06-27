@@ -188,7 +188,7 @@ Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
 - Consumes: `findLatestFindingsRound(changeDir)` and `issuesPerRound(changeDir, rounds)` (both already in this file).
 - Produces: no signature change. The summary now reads the real highest round on disk instead of `maxRounds`.
 
-- [ ] **Step 1: Robustify the existing `respects maxRounds` assertion**
+- [x] **Step 1: Robustify the existing `respects maxRounds` assertion**
 
 The reworded notice drops the phrase "reached max rounds" but keeps "without converging to 0 issues". Update the existing assertion (currently line 180) to the stable substring so it survives the rewording (it stays GREEN now and after Step 3):
 
@@ -206,7 +206,7 @@ npx vitest run src/commands/review/__tests__/harness.test.ts -t "respects maxRou
 ```
 Expected: PASS (current message still contains "without converging to 0 issues").
 
-- [ ] **Step 2: Write the failing test (summary reports the real highest round)**
+- [x] **Step 2: Write the failing test (summary reports the real highest round)**
 
 Add this test after the `'maxRounds is below 1'` test:
 
@@ -236,14 +236,14 @@ it('the max-rounds summary reports the actual highest round and its issue counts
 });
 ```
 
-- [ ] **Step 3: Run it, verify it FAILS**
+- [x] **Step 3: Run it, verify it FAILS**
 
 ```bash
 npx vitest run src/commands/review/__tests__/harness.test.ts -t "actual highest round"
 ```
 Expected: FAIL — the current summary reads `issuesPerRound(changeDir, maxRounds=1)` → only `[5]`, and prints "reached max rounds (1)". Neither "through round 2" nor "5, 1" appears.
 
-- [ ] **Step 4: Implement the summary rewrite in `src/commands/review/harness.ts`**
+- [x] **Step 4: Implement the summary rewrite in `src/commands/review/harness.ts`**
 
 Replace the max-rounds exit block (currently lines 146-152):
 
@@ -268,14 +268,14 @@ Replace the max-rounds exit block (currently lines 146-152):
     ].join('\n'));
 ```
 
-- [ ] **Step 5: Run the whole harness test file, verify all green**
+- [x] **Step 5: Run the whole harness test file, verify all green**
 
 ```bash
 npx vitest run src/commands/review/__tests__/harness.test.ts
 ```
 Expected: PASS — new summary test passes; `respects maxRounds` still passes (stable substring); all resume tests pass.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src/commands/review/harness.ts src/commands/review/__tests__/harness.test.ts
@@ -296,7 +296,7 @@ Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
 
 **Interfaces:** none — doc/help-text only.
 
-- [ ] **Step 1: `src/bin/cli.ts` — clarify the `--max-rounds` help text (line 75)**
+- [x] **Step 1: `src/bin/cli.ts` — clarify the `--max-rounds` help text (line 75)**
 
 ```ts
 // before
@@ -305,7 +305,7 @@ Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
     .option('--max-rounds <n>', 'reviewer→proposer rounds to run this invocation; on resume these are added to the rounds already completed (default 5)', (v) => parseInt(v, 10))
 ```
 
-- [ ] **Step 2: `src/commands/review/SKILL.md` — clarify the integer (lines 92-93)**
+- [x] **Step 2: `src/commands/review/SKILL.md` — clarify the integer (lines 92-93)**
 
 ```markdown
 // before
@@ -320,7 +320,7 @@ beyond the ones already completed (it is not an absolute round-number ceiling). 
 (harness default is 5).
 ```
 
-- [ ] **Step 3: `README.md` — round budget wording (lines 79-80)**
+- [x] **Step 3: `README.md` — round budget wording (lines 79-80)**
 
 ```markdown
 // before
@@ -333,7 +333,7 @@ e.g. `/csi-opsx:review <change-name> 3` runs up to 3 rounds this pass (the defau
 resume, the number is how many *more* rounds to run beyond those already completed.
 ```
 
-- [ ] **Step 4: `README.md` — resume note (lines 94-97)**
+- [x] **Step 4: `README.md` — resume note (lines 94-97)**
 
 ```markdown
 // before
@@ -350,7 +350,7 @@ out its round budget. If the change doesn't exist or has no artifacts, it tells 
 more rounds from where the last pass stopped — pass an integer to control how many.
 ```
 
-- [ ] **Step 5: `.claude/CLAUDE.md` — note the relative semantics in the Resumability section**
+- [x] **Step 5: `.claude/CLAUDE.md` — note the relative semantics in the Resumability section**
 
 Append a sentence to the existing Resumability paragraph:
 
@@ -368,14 +368,14 @@ On startup the harness scans for `review-findings-*.md` files, finds the highest
 `--max-rounds` is a per-invocation budget relative to that resume point: the loop runs `maxRounds` rounds beyond the highest committed round (`endRound = startRound - 1 + maxRounds`), so on a fresh run it behaves as an absolute cap (rounds `1..maxRounds`) and on a resume it runs that many *more* rounds.
 ```
 
-- [ ] **Step 6: Build to confirm the SKILL asset still copies**
+- [x] **Step 6: Build to confirm the SKILL asset still copies**
 
 ```bash
 npm run build
 ```
 Expected: exits 0; `tsup`'s `onSuccess` hook copies `src/commands/review/SKILL.md` → `dist/commands/review/SKILL.md`.
 
-- [ ] **Step 7: Verify the docs by reading the changed regions**
+- [x] **Step 7: Verify the docs by reading the changed regions**
 
 Read the edited regions of `src/bin/cli.ts`, `src/commands/review/SKILL.md`, `README.md`, and `.claude/CLAUDE.md` and confirm no remaining claim that `--max-rounds` is an absolute ceiling.
 
