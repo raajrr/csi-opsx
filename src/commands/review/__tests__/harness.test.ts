@@ -7,6 +7,7 @@ vi.mock('../../../lib/runner/index.js', () => ({ resolveRunner: vi.fn() }));
 
 import { resolveRunner } from '../../../lib/runner/index.js';
 import { runReviewHarness } from '../harness.js';
+import {log} from "node:util";
 
 const CHANGE = 'add-auth';
 
@@ -20,6 +21,7 @@ describe('runReviewHarness', () => {
     const DESIGN_CONTENT = '# Design';
     const REVIEW_FINDINGS_1 = 'review-findings-1.md';
     const REVIEW_FINDINGS_2 = 'review-findings-2.md';
+    const REVIEW_FINDINGS_PREFIX = 'review-findings-';
 
     beforeEach(() => {
         projectRoot = join(tmpdir(), `harness-${Date.now()}-${Math.random().toString(36).slice(2)}`);
@@ -162,7 +164,7 @@ describe('runReviewHarness', () => {
             run: vi.fn(async ({ workspaceDir }: { workspaceDir: string }) => {
                 n++;
                 const round = Math.ceil(n/2);
-                const REVIEW_FINDINGS = `review-findings-${round}.md`;
+                const REVIEW_FINDINGS = `${REVIEW_FINDINGS_PREFIX}${round}.md`;
                 // Odd n => reviewer is running
                 if (n%2 === 1)
                     // Simulate the case where whenever a reviewer runs it finds an issue
@@ -177,6 +179,67 @@ describe('runReviewHarness', () => {
         // Run the review -> propose loop for only 2 rounds
         await runReviewHarness({ workspace: projectRoot, changeName: CHANGE, maxRounds: 2});
         expect(n).toBe(4); // 2 * (review -> propose rounds)
-        expect(log).toHaveBeenCalledWith(expect.stringContaining('reached max rounds'));
+        expect(log).toHaveBeenCalledWith(expect.stringContaining('without converging to 0 issues'));
     });
+
+    it('treats maxRounds as additional rounds to run when resuming, not an absolute ceiling', async () => {
+        /* Create 3 review-findings files on disk to simulate 3 review rounds having already been run.
+        *  Running review again with  max-rounds = 2 should cause it to resume from round 3 and run 2
+        *  more rounds.
+        * */
+        writeFileSync(join(changeDir, REVIEW_FINDINGS_1), findings(4, 1, 'addressed'));
+        writeFileSync(join(changeDir, REVIEW_FINDINGS_2), findings(2, 2, 'addressed'));
+        writeFileSync(join(changeDir, `${REVIEW_FINDINGS_PREFIX}3.md`), findings(2, 3, 'addressed'));
+        let n = 0;
+        vi.mocked(resolveRunner).mockReturnValue({
+            isAvailable: () => true,
+            run: vi.fn(async ({ workspaceDir }: { workspaceDir: string }) => {
+                n++;
+                const round = 3 + Math.ceil(n/2); // n = 1 or 2? => round 4. n = 3 or 4? => round 5
+                const reviewFindings = `${REVIEW_FINDINGS_PREFIX}${round}.md`;
+                if(n%2 === 1) // Reviewer's run
+                    // Simulate reviewer finding an issue (every time it runs) so that the reviewer and proposer don't converge.
+                    writeFileSync(join(workspaceDir, reviewFindings), findings(1, round, 'open') + '## Issue\nis-solved: false\nx');
+                else // Proposer's  run
+                    // Simulate the proposer addressing the issue
+                    writeFileSync(join(workspaceDir, reviewFindings), findings(1, round, 'addressed'));
+                return { exitCode: 0, stdout: '', stderr: ''}
+            }),
+        });
+        await runReviewHarness({ workspace: projectRoot, changeName: CHANGE, maxRounds: 2 });
+        expect(n).toBe(4); // The review loop for 2 more rounds (2 X reviewer + 2 X proposer = 4);
+        expect(existsSync(join(changeDir, `${REVIEW_FINDINGS_PREFIX}4.md`))).toBe(true);
+        expect(existsSync(join(changeDir, `${REVIEW_FINDINGS_PREFIX}5.md`))).toBe(true);
+    });
+
+    it('does nothing and warns when maxRounds is below 1', async () => {
+        const runSpy = vi.fn();
+        vi.mocked(resolveRunner).mockReturnValue({ isAvailable: () => true, run: runSpy});
+        const logSpy = vi.spyOn(console, 'log');
+        await runReviewHarness({ workspace: projectRoot, changeName: CHANGE, maxRounds: 0 });
+        expect(runSpy).not.toHaveBeenCalled();
+        expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('--max-rounds must be at least 1'));
+    });
+
+    it('the max-rounds summary reports the actual highest round and its issue counts, not maxRounds', async () => {
+        writeFileSync(join(changeDir, REVIEW_FINDINGS_1), findings(5, 1, 'addressed'));
+        let n = 0;
+        vi.mocked(resolveRunner).mockReturnValue({
+            isAvailable: () => true,
+            run: vi.fn( async ({ workspaceDir }: { workspaceDir: string })=> {
+                n++;
+                if(n === 1)
+                    // round 2 reviewer: finds 1 issue
+                    writeFileSync(join(workspaceDir, REVIEW_FINDINGS_2), findings(1, 2, 'open') + '## Issue\nis-solved: false\nx');
+                else
+                    // round 2 proposer: addresses it
+                    writeFileSync(join(workspaceDir, REVIEW_FINDINGS_2), findings(1, 2, 'addressed'));
+                return { exitCode: 0, stdout: '', stderr: '' };
+            }),
+        });
+        const logSpy = vi.spyOn(console, 'log');
+        await runReviewHarness({ workspace: projectRoot, changeName: CHANGE, maxRounds: 1 });
+        expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('through round 2'));
+        expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('5, 1'));
+    })
 });

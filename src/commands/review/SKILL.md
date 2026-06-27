@@ -2,7 +2,7 @@
 
 Run the automated reviewer→proposer loop on a change whose artifacts **already exist** — without
 generating new artifacts. Use this to re-review or resume a change you created earlier, wrote by
-hand, or one left behind by a `propose` run that crashed or hit its round cap.
+hand, or one left behind by a `review` run that crashed or ran out its round budget.
 
 ## Step 1: Resolve the change name
 
@@ -90,6 +90,9 @@ csi-opsx run --command=review --workspace . --change <name>
 ```
 
 If the user invoked `/csi-opsx:review` with an integer (e.g. `/csi-opsx:review <name> 3`), append
-`--max-rounds=<integer>`. Otherwise, omit it (harness default is 5).
+`--max-rounds=<integer>`. The integer is the number of rounds to run **this** invocation — when
+resuming a change that already has `review-findings-N.md`, the harness runs that many *more* rounds
+beyond the ones already completed (it is not an absolute round-number ceiling). Otherwise, omit it
+(harness default is 5).
 
 Wait for the harness to complete. Surface the exit summary to the session.

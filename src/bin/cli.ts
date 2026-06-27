@@ -72,7 +72,9 @@ program
     .requiredOption('--command <name>', 'command to run (review)')
     .requiredOption('--workspace <path>', 'project root path')
     .requiredOption('--change <name>', 'name of the change folder under openspec/changes/')
-    .option('--max-rounds <n>', 'maximum reviewer→proposer rounds (default 5)', (v) => parseInt(v, 10))
+    .option('--max-rounds <n>',
+        'reviewer→proposer rounds to run this invocation; on resume these are added to the rounds already completed (default 5)',
+        (v) => parseInt(v, 10))
     .action(async (opts) => {
         const runner = HARNESS_RUNNERS[opts.command as CommandName];
         if (!runner) {

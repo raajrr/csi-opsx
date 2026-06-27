@@ -43,7 +43,10 @@ async function runStage(
 export async function runReviewHarness(opts: HarnessOptions): Promise<void> {
     const  projectRoot = resolve(opts.workspace);
     const { changeName, maxRounds = DEFAULT_MAX_ROUNDS } = opts;
-
+    if (maxRounds < 1) {
+        console.log(`⚠ csi-opsx: --max-rounds must be at least 1 (got ${maxRounds}). Nothing to do.`);
+        return;
+    }
     validateChangeName(changeName);
     const changeDir = getChangeDirectory(projectRoot, changeName);
     const artifacts = enumerateChangeArtifacts(projectRoot, changeName);
@@ -91,7 +94,14 @@ export async function runReviewHarness(opts: HarnessOptions): Promise<void> {
         }
     }
 
-    while (round <= maxRounds) {
+    /* maxRounds is a per-invocation budget measured from the resume point, not an absolute
+    *  ceiling. `round` here is already resume-adjusted (1 on a fresh run; the next/continuing
+    *  round on a resume), so endRound = startRound - 1 + maxRounds means "run maxRounds rounds
+    *  from wherever we pick up" — identical to the old absolute cap on a fresh run.
+    * */
+    const startRound = round;
+    const endRound = startRound - 1 + maxRounds;
+    while (round <= endRound) {
         const findingsName = `review-findings-${round}.md`;
 
         if(phase === 'reviewer') {
@@ -143,12 +153,13 @@ export async function runReviewHarness(opts: HarnessOptions): Promise<void> {
             phase = 'reviewer';
         }
     }
-    const counts = issuesPerRound(changeDir, maxRounds);
+    const highestRound = findLatestFindingsRound(changeDir);
+    const counts = issuesPerRound(changeDir, highestRound);
     console.log([
-        `⚠ Review: reached max rounds (${maxRounds}) without converging to 0 issues.`,
+        `⚠ Review: ran ${maxRounds} round${maxRounds === 1 ? '' : 's'} this pass (through round ${highestRound}) without converging to 0 issues.`,
         `  Issues found per round: ${counts.join(', ')}`,
-        `  Review history: ${Array.from({ length: maxRounds }, (_, i) => `review-findings-${i + 1}.md`).join(', ')}`,
-        '  Review the artifacts and the findings files manually.',
+        `  Review history: ${Array.from({ length: highestRound }, (_, i) => `review-findings-${i + 1}.md`).join(', ')}`,
+        '  Run /csi-opsx:review again to run more rounds, or review the artifacts and findings files manually.',
     ].join('\n'));
 }
 
