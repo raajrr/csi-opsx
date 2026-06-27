@@ -46,13 +46,13 @@ point** — not an absolute round-number ceiling.
 ```ts
 // after the resume block has set `round`/`phase`:
 const startRound = round;                 // the round we actually begin executing
-const lastRound  = startRound - 1 + maxRounds;
-while (round <= lastRound) { /* … */ }
+const endRound  = startRound - 1 + maxRounds;
+while (round <= endRound) { /* … */ }
 ```
 
-- Fresh run: `startRound = 1` ⇒ `lastRound = maxRounds` ⇒ identical to today.
-- Resume from round `K+1` with `N`: `lastRound = K + N` ⇒ runs rounds `K+1 … K+N` = **N more rounds**.
-- Because any `N ≥ 1` gives `lastRound ≥ startRound`, the loop **always runs at least one round** on
+- Fresh run: `startRound = 1` ⇒ `endRound = maxRounds` ⇒ identical to today.
+- Resume from round `K+1` with `N`: `endRound = K + N` ⇒ runs rounds `K+1 … K+N` = **N more rounds**.
+- Because any `N ≥ 1` gives `endRound ≥ startRound`, the loop **always runs at least one round** on
   resume — the silent no-op disappears by construction.
 
 A "round" remains one reviewer pass plus (when issues are found) one proposer pass, sharing the same
@@ -120,7 +120,7 @@ reader of the "untouched" notes knows where the meaning changed and why.
 
 | File | Change |
 |---|---|
-| `src/commands/review/harness.ts` | Compute `lastRound = startRound - 1 + maxRounds`; loop on `lastRound`. Add the `maxRounds < 1` guard. Rewrite the max-rounds summary to key off `findLatestFindingsRound`. |
+| `src/commands/review/harness.ts` | Compute `endRound = startRound - 1 + maxRounds`; loop on `endRound`. Add the `maxRounds < 1` guard. Rewrite the max-rounds summary to key off `findLatestFindingsRound`. |
 | `src/commands/review/__tests__/harness.test.ts` | New test: relative budget runs N more rounds on resume. New/updated test: summary reports the real highest round. Update the existing `respects maxRounds` wording assertion. |
 | `src/bin/cli.ts:75` | Clarify `--max-rounds` help text (rounds **per invocation**, added to rounds already completed when resuming). |
 | `src/commands/review/SKILL.md` | Clarify that the integer is *additional rounds to run*, not an absolute ceiling. |
@@ -150,7 +150,7 @@ reader of the "untouched" notes knows where the meaning changed and why.
 
 ## Decisions
 
-1. **`--max-rounds` becomes a per-invocation budget relative to the resume point** (`lastRound =
+1. **`--max-rounds` becomes a per-invocation budget relative to the resume point** (`endRound =
    startRound - 1 + maxRounds`). *Rejected:* keep it absolute and do the arithmetic in `review/SKILL.md`
    (fragile LLM-side math; the recorded failure mode).
 2. **Fix the max-rounds summary to report actual rounds run**, keyed off `findLatestFindingsRound`.

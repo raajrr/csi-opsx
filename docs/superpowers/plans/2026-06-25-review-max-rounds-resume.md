@@ -13,7 +13,7 @@
 ## Global Constraints
 
 - **Resume logic is NOT changed** — `findLatestFindingsRound` / `parseStatus` / `parseIssuesFound` and the start-phase decision (`harness.ts:67-92`) stay exactly as they are. Only the loop ceiling, a new lower-bound guard, and the summary wording/enumeration change.
-- **Fresh-run behavior must stay identical** — on a fresh run `startRound = 1`, so `lastRound = maxRounds` (same as today). Existing fresh-run tests must stay green.
+- **Fresh-run behavior must stay identical** — on a fresh run `startRound = 1`, so `endRound = maxRounds` (same as today). Existing fresh-run tests must stay green.
 - **`maxRounds` contract is a positive integer** (`docs/superpowers/specs/2026-05-18-csi-opsx-design.md:144`). `< 1` is a usage error, handled with an explicit notice, never a silent no-op.
 - **`findLatestFindingsRound` is already imported** in `harness.ts:5` — no new imports needed.
 - **TDD throughout** — every code change is preceded by a test that fails first for the right reason.
@@ -31,7 +31,7 @@ git checkout -b fix-review-max-rounds-resume
 
 | Path | Responsibility after this change |
 |---|---|
-| `src/commands/review/harness.ts` | Relative round budget (`lastRound`), `maxRounds < 1` guard, honest max-rounds summary keyed off `findLatestFindingsRound`. |
+| `src/commands/review/harness.ts` | Relative round budget (`endRound`), `maxRounds < 1` guard, honest max-rounds summary keyed off `findLatestFindingsRound`. |
 | `src/commands/review/__tests__/harness.test.ts` | New tests: relative budget on resume, `maxRounds < 1` guard, summary reports real highest round. Existing `respects maxRounds` assertion robustified. |
 | `src/bin/cli.ts` | `--max-rounds` help text clarified (per-invocation budget). |
 | `src/commands/review/SKILL.md` | Clarify the integer is *additional* rounds, not an absolute ceiling. |
@@ -50,7 +50,7 @@ git checkout -b fix-review-max-rounds-resume
 - Consumes: `runReviewHarness(opts: HarnessOptions): Promise<void>` and `HarnessOptions = { workspace: string; changeName: string; maxRounds?: number }` (unchanged).
 - Produces: no signature change. Behavioral change only: `maxRounds` is now a per-invocation budget.
 
-- [ ] **Step 1: Write the failing test (relative budget on resume)**
+- [x] **Step 1: Write the failing test (relative budget on resume)**
 
 In `src/commands/review/__tests__/harness.test.ts`, add this test immediately **after** the `'resumes status=addressed …'` test (after its closing `});` on line 105):
 
@@ -85,14 +85,14 @@ it('treats maxRounds as additional rounds to run when resuming, not an absolute 
 });
 ```
 
-- [ ] **Step 2: Run the test, verify it FAILS for the right reason**
+- [x] **Step 2: Run the test, verify it FAILS for the right reason**
 
 ```bash
 npx vitest run src/commands/review/__tests__/harness.test.ts -t "additional rounds to run when resuming"
 ```
 Expected: FAIL — `expected 4, got 0`. Resume sets `round = 4`, and the current `while (4 <= 2)` is false, so the loop body never runs (`n` stays 0). This is the silent no-op the change fixes.
 
-- [ ] **Step 3: Implement the relative ceiling in `src/commands/review/harness.ts`**
+- [x] **Step 3: Implement the relative ceiling in `src/commands/review/harness.ts`**
 
 Replace the `while` line (currently line 94) and add the budget computation just above it:
 
@@ -106,19 +106,19 @@ Replace the `while` line (currently line 94) and add the budget computation just
     // ceiling: fresh runs start at round 1 (unchanged); a resume runs `maxRounds` more rounds
     // beyond the rounds already committed on disk.
     const startRound = round;
-    const lastRound = startRound - 1 + maxRounds;
-    while (round <= lastRound) {
+    const endRound = startRound - 1 + maxRounds;
+    while (round <= endRound) {
         const findingsName = `review-findings-${round}.md`;
 ```
 
-- [ ] **Step 4: Run the test, verify it PASSES**
+- [x] **Step 4: Run the test, verify it PASSES**
 
 ```bash
 npx vitest run src/commands/review/__tests__/harness.test.ts -t "additional rounds to run when resuming"
 ```
 Expected: PASS (`n === 4`; findings-4 and findings-5 exist).
 
-- [ ] **Step 5: Write the failing test (`maxRounds < 1` guard)**
+- [x] **Step 5: Write the failing test (`maxRounds < 1` guard)**
 
 Add this test right after the one from Step 1:
 
@@ -133,14 +133,14 @@ it('does nothing and warns when maxRounds is below 1', async () => {
 });
 ```
 
-- [ ] **Step 6: Run it, verify it FAILS**
+- [x] **Step 6: Run it, verify it FAILS**
 
 ```bash
 npx vitest run src/commands/review/__tests__/harness.test.ts -t "maxRounds is below 1"
 ```
-Expected: FAIL — without the guard, `maxRounds: 0` falls through to the max-rounds summary (`lastRound = 0`, loop skipped) and logs a "ran 0 rounds" notice, never the `--max-rounds must be at least 1` message.
+Expected: FAIL — without the guard, `maxRounds: 0` falls through to the max-rounds summary (`endRound = 0`, loop skipped) and logs a "ran 0 rounds" notice, never the `--max-rounds must be at least 1` message.
 
-- [ ] **Step 7: Implement the guard in `src/commands/review/harness.ts`**
+- [x] **Step 7: Implement the guard in `src/commands/review/harness.ts`**
 
 Add the guard immediately after the options are destructured (currently line 45):
 
@@ -160,12 +160,12 @@ Add the guard immediately after the options are destructured (currently line 45)
     validateChangeName(changeName);
 ```
 
-- [ ] **Step 8: Run the whole harness test file, verify all green**
+- [x] **Step 8: Run the whole harness test file, verify all green**
 
 ```bash
 npx vitest run src/commands/review/__tests__/harness.test.ts
 ```
-Expected: PASS — the two new tests plus all existing cases (the fresh-run `respects maxRounds` test still passes because `startRound = 1` keeps `lastRound = maxRounds`).
+Expected: PASS — the two new tests plus all existing cases (the fresh-run `respects maxRounds` test still passes because `startRound = 1` keeps `endRound = maxRounds`).
 
 - [ ] **Step 9: Commit**
 
@@ -365,7 +365,7 @@ On startup the harness scans for `review-findings-*.md` files, finds the highest
 
 On startup the harness scans for `review-findings-*.md` files, finds the highest round, and inspects its `status` to determine whether to start the reviewer or proposer for that round.
 
-`--max-rounds` is a per-invocation budget relative to that resume point: the loop runs `maxRounds` rounds beyond the highest committed round (`lastRound = startRound - 1 + maxRounds`), so on a fresh run it behaves as an absolute cap (rounds `1..maxRounds`) and on a resume it runs that many *more* rounds.
+`--max-rounds` is a per-invocation budget relative to that resume point: the loop runs `maxRounds` rounds beyond the highest committed round (`endRound = startRound - 1 + maxRounds`), so on a fresh run it behaves as an absolute cap (rounds `1..maxRounds`) and on a resume it runs that many *more* rounds.
 ```
 
 - [ ] **Step 6: Build to confirm the SKILL asset still copies**
@@ -405,4 +405,4 @@ Optional manual smoke (requires `claude` on PATH and an OpenSpec project with an
 
 - **Design-doc coverage:** relative ceiling (Task 1 Steps 1-4) ✓; `maxRounds < 1` guard (Task 1 Steps 5-7) ✓; honest summary keyed off `findLatestFindingsRound` (Task 2) ✓; fresh-run parity (Global Constraints + `respects maxRounds` stays green) ✓; cli/SKILL/README/CLAUDE.md docs (Task 3) ✓; flag-rename and issues-found-decrement explicitly out of scope (no task) ✓.
 - **Placeholder scan:** every code/test/doc step shows full before/after content; no TBD/TODO/"handle edge cases".
-- **Type consistency:** `startRound`, `lastRound`, `highestRound` are local `number`s; `runReviewHarness`/`HarnessOptions` unchanged; `findLatestFindingsRound`/`issuesPerRound` used with existing signatures.
+- **Type consistency:** `startRound`, `endRound`, `highestRound` are local `number`s; `runReviewHarness`/`HarnessOptions` unchanged; `findLatestFindingsRound`/`issuesPerRound` used with existing signatures.

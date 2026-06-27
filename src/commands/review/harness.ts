@@ -43,7 +43,10 @@ async function runStage(
 export async function runReviewHarness(opts: HarnessOptions): Promise<void> {
     const  projectRoot = resolve(opts.workspace);
     const { changeName, maxRounds = DEFAULT_MAX_ROUNDS } = opts;
-
+    if (maxRounds < 1) {
+        console.log(`⚠ csi-opsx: --max-rounds must be at least 1 (got ${maxRounds}). Nothing to do.`);
+        return;
+    }
     validateChangeName(changeName);
     const changeDir = getChangeDirectory(projectRoot, changeName);
     const artifacts = enumerateChangeArtifacts(projectRoot, changeName);
@@ -91,7 +94,14 @@ export async function runReviewHarness(opts: HarnessOptions): Promise<void> {
         }
     }
 
-    while (round <= maxRounds) {
+    /* maxRounds is a per-invocation budget measured from the resume point, not an absolute
+    *  ceiling. `round` here is already resume-adjusted (1 on a fresh run; the next/continuing
+    *  round on a resume), so endRound = startRound - 1 + maxRounds means "run maxRounds rounds
+    *  from wherever we pick up" — identical to the old absolute cap on a fresh run.
+    * */
+    const startRound = round;
+    const endRound = startRound - 1 + maxRounds;
+    while (round <= endRound) {
         const findingsName = `review-findings-${round}.md`;
 
         if(phase === 'reviewer') {
