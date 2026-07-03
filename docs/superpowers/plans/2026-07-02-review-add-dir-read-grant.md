@@ -293,7 +293,7 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 
 **Interfaces:** none — docs only. Note `.claude/CLAUDE.md` lines 39/59/65/71 are stale from *before* this change (they still describe the long-gone `writablePaths` mechanism); this task brings them to the current, post-fix truth in one pass.
 
-- [ ] **Step 1: `.claude/CLAUDE.md` — module table row (line 39)**
+- [x] **Step 1: `.claude/CLAUDE.md` — module table row (line 39)**
 
 ```markdown
 // before
@@ -302,7 +302,7 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 | `runner/claude/cli.ts` | `ClaudeCliRunner` — spawns `claude -p` via `child_process.spawnSync`; when `projectRoot` is provided, grants project reads with `--add-dir` and calls `writePermissions` for the write-deny rules |
 ```
 
-- [ ] **Step 2: `.claude/CLAUDE.md` — review harness loop diagram (lines 55–69)**
+- [x] **Step 2: `.claude/CLAUDE.md` — review harness loop diagram (lines 55–69)**
 
 ```markdown
 // before
@@ -337,7 +337,7 @@ resolve runner → resume scan → start round N
     round++
 ```
 
-- [ ] **Step 3: `.claude/CLAUDE.md` — sandbox paragraph (line 71)**
+- [x] **Step 3: `.claude/CLAUDE.md` — sandbox paragraph (line 71)**
 
 ```markdown
 // before
@@ -347,7 +347,7 @@ Agents read project context (`CLAUDE.md`, `openspec/`, `docs/`) from absolute pa
 Agents read project context (`CLAUDE.md`, `openspec/`, `docs/`) from absolute paths in their prompt — no copying needed because the runner re-grants the project with the `--add-dir` CLI flag. The grant must be the flag, not `additionalDirectories` in the workspace `.claude/settings.json`: Claude Code ignores that permission-expanding entry in directories that were never trusted, and the disposable per-round workspaces never are. The workspace `settings.json` (written by `writePermissions`) carries only `deny` rules for `Write`/`Edit` on the project subtree — permission-shrinking rules still load untrusted — so the project stays read-only while the workspace cwd is writable under `acceptEdits`. The harness does not import `permissions` directly — each runner encapsulates its own sandbox mechanism.
 ```
 
-- [ ] **Step 4: spec `2026-05-18-csi-opsx-design.md` — read-grant paragraph + example + spawn line (lines 312–327)**
+- [x] **Step 4: spec `2026-05-18-csi-opsx-design.md` — read-grant paragraph + example + spawn line (lines 312–327)**
 
 ```markdown
 // before (line 312 paragraph)
@@ -391,7 +391,7 @@ The runner spawns `claude -p <prompt> --permission-mode acceptEdits --setting-so
 The runner spawns `claude -p <prompt> --permission-mode acceptEdits --setting-sources project --add-dir "<projectRoot>"` with `cwd` = the workspace (the runner wraps the path in quotes itself — `spawnSync` with `shell: true` joins arguments without quoting, and project paths can contain spaces). It deliberately does **not** allow the Bash tool (no `--allowedTools Bash`): Bash is the one path-agnostic way around a Write/Edit deny, and leaving it unlisted means it needs approval and is auto-denied under `-p`.
 ```
 
-- [ ] **Step 5: spec — helper bullet (line 336)**
+- [x] **Step 5: spec — helper bullet (line 336)**
 
 ```markdown
 // before
@@ -400,11 +400,11 @@ The runner spawns `claude -p <prompt> --permission-mode acceptEdits --setting-so
 - The helper is **pattern-only.** `--add-dir` takes a directory *path*, not a glob — pass the project's native path (`C:\…`) untouched, and use the helper solely to build the `deny` patterns.
 ```
 
-- [ ] **Step 6: Verify by reading the changed regions**
+- [x] **Step 6: Verify by reading the changed regions** *(also fixed two spots the plan missed, caught by this step's criteria: spec line 78 module-diagram still claimed `additionalDirectories` in settings.json; spec line 509's 2026-05-30 resolution note gained a dated supersession pointer)*
 
 Read the edited regions of `.claude/CLAUDE.md` and the spec and confirm: no remaining `writablePaths` references (`grep -n writablePaths .claude/CLAUDE.md` → no matches), no claim that the read grant lives in `settings.json`, and the loop diagram matches `harness.ts` (reviewer workspace is empty; runner receives `projectRoot`).
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add .claude/CLAUDE.md docs/superpowers/specs/2026-05-18-csi-opsx-design.md

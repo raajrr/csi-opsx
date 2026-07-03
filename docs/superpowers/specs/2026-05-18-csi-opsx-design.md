@@ -75,7 +75,7 @@ csi-opsx/
         index.ts            ← resolveRunner(): detects available runner
         claude/
           cli.ts            ← ClaudeCliRunner: spawns claude -p (acceptEdits, cwd=workspace); calls writePermissions internally
-          permissions.ts    ← Claude-specific: builds .claude/settings.json (project read-only via deny + additionalDirectories) + fs-path→glob helper
+          permissions.ts    ← Claude-specific: builds deny-only .claude/settings.json (project write-deny rules; read grant is the --add-dir flag) + fs-path→glob helper
       workspace.ts          ← temp dir creation, file copying, cleanup
       loop.ts               ← loop controller: reads findings, decides continue/exit
     skills/
@@ -309,13 +309,13 @@ Each agent run executes in its own temporary workspace, with `cwd` set to that d
 - writes/edits *outside* the workspace require approval, which is auto-denied in non-interactive (`-p`) mode — so they are blocked;
 - reads *outside* the workspace are blocked the same way. (This corrects an earlier assumption that "Read is unrestricted." The working directory is a **two-way** boundary — it gates reads as well as writes.)
 
-**Reading project context without copying it.** The agent still needs to read project files that live outside the workspace (`CLAUDE.md`, `openspec/specs/`, `docs/`). The runner re-grants read access to the project root through `additionalDirectories` in the workspace's `.claude/settings.json`. Because `additionalDirectories` grants *both* read and write, the runner also adds `deny` rules for the write tools on the project subtree. `deny` overrides both `allow` and the `acceptEdits` mode, so the project ends up **readable but not writable**, while the workspace stays writable.
+**Reading project context without copying it.** *(Updated 2026-07-02 — see `2026-07-02-review-add-dir-read-grant-design.md`; originally `additionalDirectories` in the workspace settings, which Claude Code now ignores in never-trusted directories.)* The agent still needs to read project files that live outside the workspace (`CLAUDE.md`, `openspec/specs/`, `docs/`). The runner re-grants read access to the project root with the **`--add-dir <projectRoot>` CLI flag** — a flag the operator passed explicitly, so it is honored regardless of directory trust. Because `--add-dir` grants *both* read and write, the runner also adds `deny` rules for the write tools on the project subtree in the workspace's `.claude/settings.json`; permission-shrinking rules still load in untrusted directories. `deny` overrides both `allow` and the `acceptEdits` mode, so the project ends up **readable but not writable**, while the workspace stays writable.
 
 ```jsonc
 // workspace/.claude/settings.json — written by writePermissions() before spawning
+// (deny-only: the read grant is the --add-dir flag, not a settings entry)
 {
   "permissions": {
-    "additionalDirectories": ["<projectRoot>"],   // read project context in place
     "deny": [
       "Write(//c/Users/me/project/**)",           // project is read-only…
       "Edit(//c/Users/me/project/**)"             // …deny beats allow + acceptEdits
@@ -324,7 +324,7 @@ Each agent run executes in its own temporary workspace, with `cwd` set to that d
 }
 ```
 
-The runner spawns `claude -p <prompt> --permission-mode acceptEdits --setting-sources project` with `cwd` = the workspace. It deliberately does **not** allow the Bash tool (no `--allowedTools Bash`): Bash is the one path-agnostic way around a Write/Edit deny, and leaving it unlisted means it needs approval and is auto-denied under `-p`.
+The runner spawns `claude -p <prompt> --permission-mode acceptEdits --setting-sources project --add-dir "<projectRoot>"` with `cwd` = the workspace (the runner wraps the path in quotes itself — `spawnSync` with `shell: true` joins arguments without quoting, and project paths can contain spaces). It deliberately does **not** allow the Bash tool (no `--allowedTools Bash`): Bash is the one path-agnostic way around a Write/Edit deny, and leaving it unlisted means it needs approval and is auto-denied under `-p`.
 
 **The fs-path → permission-glob helper.** A `deny` rule's path is a *glob*, and the permission engine only recognizes an absolute path written in a platform-specific glob form:
 
@@ -333,7 +333,7 @@ The runner spawns `claude -p <prompt> --permission-mode acceptEdits --setting-so
 
 So `permissions.ts` carries a small helper that converts an absolute filesystem path into this glob form. Two points:
 
-- The helper is **pattern-only.** `additionalDirectories` takes a directory *path*, not a glob — it accepts the native path (`C:\…`) or a POSIX path (`/c/…`, `C:/…`) but **rejects** the `//c/…` glob form. Simplest approach: pass the project's native path to `additionalDirectories` untouched, and use the helper solely to build the `deny` patterns.
+- The helper is **pattern-only.** `--add-dir` takes a directory *path*, not a glob — pass the project's native path (`C:\…`) untouched, and use the helper solely to build the `deny` patterns.
 - Detect the path **shape** (e.g. a leading `C:` drive letter) rather than `process.platform`, so the helper is a pure string function that can be unit-tested for both operating systems from any machine.
 
 **Testing the sandbox (acceptance criterion).** A `deny`-rule block does **not** show up in the `claude -p` JSON `permission_denials` array — that array only captures interactive "would-prompt → auto-denied" events, not pre-emptive deny-rule blocks. The ground truth is the **file state**. The integration test must therefore assert on files: an in-workspace write *succeeds* (the file exists) and an attempted project write *is blocked* (the project file is absent/unchanged). A JSON-shape unit test is explicitly **not** sufficient — asserting only the shape of `settings.json` is exactly what let the original, completely non-functional sandbox pass its tests.
@@ -506,6 +506,6 @@ The command file is a thin entry point that references the skill behavior. The s
 ## Open Questions
 
 - Does `claude --version` reliably indicate that `claude -p` non-interactive mode is available, or is a more specific capability check needed?
-- ~~Does `claude -p` in a subprocess correctly inherit the working directory's `.claude/settings.json` for permissions?~~ **Resolved (2026-05-30).** Yes — with `--setting-sources project` and `cwd` = workspace. The full sandbox mechanism (acceptEdits + workspace boundary + project read-only via `additionalDirectories`/`deny`, using the platform-specific glob form) was verified with real `claude -p` runs; see **Workspace Isolation & Write Sandbox**.
+- ~~Does `claude -p` in a subprocess correctly inherit the working directory's `.claude/settings.json` for permissions?~~ **Resolved (2026-05-30).** Yes — with `--setting-sources project` and `cwd` = workspace. The full sandbox mechanism (acceptEdits + workspace boundary + project read-only via `additionalDirectories`/`deny`, using the platform-specific glob form) was verified with real `claude -p` runs; see **Workspace Isolation & Write Sandbox**. *(2026-07-02: the read-grant half has since moved to the `--add-dir` CLI flag — Claude Code now ignores `additionalDirectories` in never-trusted directories; see `2026-07-02-review-add-dir-read-grant-design.md`.)*
 - Does OpenSpec (`validate`/`apply`/`archive`) tolerate `review-findings-*.md` living inside the change folder? Verify early; fall back to a dedicated `.csi-opsx/` location if it errors.
 - Exact Codex CLI flags for non-interactive use — research spike before implementing CodexCliRunner.
