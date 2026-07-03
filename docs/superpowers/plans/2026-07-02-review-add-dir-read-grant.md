@@ -49,7 +49,7 @@ All work happens on the feature branch `fix-review-issue-due-to-updated-claude-c
 - Consumes: `Runner.run(opts: RunnerOptions): Promise<RunnerResult>` with `RunnerOptions = { prompt: string; workspaceDir: string; projectRoot?: string }` (unchanged); `writePermissions(workspaceDir, projectRoot)` (unchanged signature).
 - Produces: no signature change. Behavioral change only: the spawned command line gains `--add-dir "<projectRoot>"` when `projectRoot` is set.
 
-- [ ] **Step 1: Add the read-grant probe to the integration test (this is the regression reproduction)**
+- [x] **Step 1: Add the read-grant probe to the integration test (this is the regression reproduction)**
 
 In `src/lib/runner/claude/__tests__/sandbox.integration.test.ts`, add `readFileSync` to the fs import (line 2):
 
@@ -93,7 +93,7 @@ Then replace the top of `runScenario` (lines 12–24, up to and including the in
 
 The rest of `runScenario` (the `leak.txt` probe and the `finally` cleanup) is unchanged.
 
-- [ ] **Step 2: Run the integration file, verify it FAILS for the right reason**
+- [x] **Step 2: Run the integration file, verify it FAILS for the right reason**
 
 ```bash
 npx vitest run src/lib/runner/claude/__tests__/sandbox.integration.test.ts
@@ -101,7 +101,7 @@ npx vitest run src/lib/runner/claude/__tests__/sandbox.integration.test.ts
 
 Expected: **FAIL** (~3–6 min, real API spend). Both scenario tests (`allows in-workspace writes and blocks project writes` and `holds when the project path contains a space`) fail at `expect(existsSync(readOutPath)).toBe(true)` — `expected false to be true` — because the sub-agent's `Read` of the project file is denied. (The denial itself isn't visible in vitest output; log `readGrant.stderr` if you want to see the "Ignoring 1 permissions.additionalDirectories entry … this workspace has not been trusted" warning.) The Bash-bypass test still passes. This is the live regression.
 
-- [ ] **Step 3: Write the failing unit test for the spawn args**
+- [x] **Step 3: Write the failing unit test for the spawn args**
 
 In `src/lib/runner/claude/__tests__/cli.test.ts`, add this test inside `describe('run', …)`, immediately after the `'does not write .claude/settings.json when projectRoot is omitted'` test (after its closing `});` on line 77). The spaced path is deliberate — it encodes the quoting requirement:
 
@@ -124,7 +124,7 @@ In `src/lib/runner/claude/__tests__/cli.test.ts`, add this test inside `describe
         });
 ```
 
-- [ ] **Step 4: Run it, verify it FAILS**
+- [x] **Step 4: Run it, verify it FAILS**
 
 ```bash
 npx vitest run src/lib/runner/claude/__tests__/cli.test.ts -t "passes --add-dir"
@@ -132,7 +132,7 @@ npx vitest run src/lib/runner/claude/__tests__/cli.test.ts -t "passes --add-dir"
 
 Expected: FAIL — `expected -1 to be greater than -1` (the current args array never contains `--add-dir`).
 
-- [ ] **Step 5: Implement the flag in `src/lib/runner/claude/cli.ts`**
+- [x] **Step 5: Implement the flag in `src/lib/runner/claude/cli.ts`**
 
 Replace the `run` method (lines 15–41) with:
 
@@ -173,7 +173,7 @@ Replace the `run` method (lines 15–41) with:
     }
 ```
 
-- [ ] **Step 6: Run the whole unit test file, verify all green**
+- [x] **Step 6: Run the whole unit test file, verify all green**
 
 ```bash
 npx vitest run src/lib/runner/claude/__tests__/cli.test.ts
@@ -181,7 +181,7 @@ npx vitest run src/lib/runner/claude/__tests__/cli.test.ts
 
 Expected: PASS — the new `--add-dir` test passes; the existing exact-args test (`spawn claude -p with acceptEdits and project setting-sources`) still passes because it runs *without* `projectRoot`, proving the flag is absent on that path; the two settings.json tests are unaffected.
 
-- [ ] **Step 7: Re-run the integration file, verify the regression is fixed**
+- [x] **Step 7: Re-run the integration file, verify the regression is fixed**
 
 ```bash
 npx vitest run src/lib/runner/claude/__tests__/sandbox.integration.test.ts

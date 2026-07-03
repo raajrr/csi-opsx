@@ -15,15 +15,21 @@ export class ClaudeCliRunner implements Runner {
     async run(opts: RunnerOptions): Promise<RunnerResult> {
         const { prompt, workspaceDir, projectRoot } = opts;
 
-        /* The workspace cwd is writable under acceptEdits; the project is re-granted
-           read-only via settings.json. Bash is deliberately NOT allowed (write bypass).
-        */
+        /*The workspace cwd is writable under acceptEdits. Read permission to the project must
+        * be granted via the --add-dir flag. Claude Code ignores the additionalDirectories field
+        * in the settings.json in untrusted directories (which temporary workspaces created for
+        * the use of the reviewer and proposer are). The deny rules written by writePermissions still
+        * take effect (since they shrink permissions), keeping the project read-only. Bash is
+        * deliberately not allowed (write bypass)*/
+        const args = ['-p', '--permission-mode', 'acceptEdits', '--setting-sources', 'project'];
         if (projectRoot) {
             writePermissions(workspaceDir, projectRoot);
+            // shell:true joins args without enclosing them in quotes. Paths may contain spaces.
+            args.push('--add-dir', `"${projectRoot}"`);
         }
         const result = spawnSync(
             'claude',
-            ['-p', '--permission-mode', 'acceptEdits', '--setting-sources', 'project'],
+            args,
             {
                 cwd: workspaceDir,
                 input: prompt,

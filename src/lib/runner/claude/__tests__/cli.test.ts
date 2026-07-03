@@ -76,6 +76,25 @@ describe('ClaudeCliRunner', () => {
             }
         });
 
+        it('passes --add-dir with the QUOTED project root when projectRoot is provided', async () => {
+            vi.mocked(spawnSync).mockReturnValue({ status: 0, stdout: '', stderr: '' } as ReturnType<typeof spawnSync>);
+            const WS = join(tmpdir(), `cli-adddir-${Date.now()}`);
+            mkdirSync(WS, { recursive: true });
+            try {
+                await new ClaudeCliRunner().run({ prompt: 'p', workspaceDir: WS,  projectRoot: 'C:\\Users\\me\\my proj' });
+                const [, args] = vi.mocked(spawnSync).mock.calls[0];
+                const flagIndex = (args as string[]).indexOf('--add-dir');
+                expect(flagIndex).toBeGreaterThan(-1);
+                /*shell: true joins the arguments without enclosing them in quotes. So we need to make the
+                * runner enclose the path argument in quotes since project names and paths to them can
+                * contain spaces*/
+                expect((args as string[])[flagIndex + 1]).toBe('"C:\\Users\\me\\my proj"')
+
+            } finally {
+                rmSync(WS, { recursive: true, force: true });
+            }
+        });
+
         it('returns exit code 0 and stdout on success', async () => {
            vi.mocked(spawnSync).mockReturnValue( { status: 0, stdout: 'out', stderr: '' } as ReturnType<typeof spawnSync>);
            const r = await new ClaudeCliRunner().run({ prompt: 'p', workspaceDir: '/tmp/ws' });
