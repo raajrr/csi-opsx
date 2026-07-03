@@ -210,7 +210,7 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 - Consumes: `toPermissionGlob(absolutePath: string): string` (unchanged).
 - Produces: `writePermissions(workspaceDir: string, projectRoot: string): void` (unchanged signature); the emitted `settings.json` now contains ONLY `permissions.deny`.
 
-- [ ] **Step 1: Flip the presence test to an absence test**
+- [x] **Step 1: Flip the presence test to an absence test**
 
 In `src/lib/runner/claude/__tests__/permissions.test.ts`, replace the `'lists the project root under additionalDirectories (native path)'` test (lines 40–44) with:
 
@@ -222,7 +222,7 @@ In `src/lib/runner/claude/__tests__/permissions.test.ts`, replace the `'lists th
     });
 ```
 
-- [ ] **Step 2: Run it, verify it FAILS**
+- [x] **Step 2: Run it, verify it FAILS**
 
 ```bash
 npx vitest run src/lib/runner/claude/__tests__/permissions.test.ts -t "does not emit additionalDirectories"
@@ -230,7 +230,7 @@ npx vitest run src/lib/runner/claude/__tests__/permissions.test.ts -t "does not 
 
 Expected: FAIL — `expected [ 'C:\\Users\\me\\proj' ] to be undefined` (the current `writePermissions` still emits the entry).
 
-- [ ] **Step 3: Implement in `src/lib/runner/claude/permissions.ts`**
+- [x] **Step 3: Implement in `src/lib/runner/claude/permissions.ts`**
 
 Replace the `writePermissions` header comment and function (lines 20–38) with:
 
@@ -258,7 +258,7 @@ export function writePermissions(workspaceDir:  string, projectRoot: string): vo
 }
 ```
 
-- [ ] **Step 4: Run the unit suites, verify all green**
+- [x] **Step 4: Run the unit suites, verify all green**
 
 ```bash
 npx vitest run src/lib/runner/claude/__tests__/permissions.test.ts src/lib/runner/claude/__tests__/cli.test.ts
@@ -266,7 +266,7 @@ npx vitest run src/lib/runner/claude/__tests__/permissions.test.ts src/lib/runne
 
 Expected: PASS — absence test passes; the deny-glob and no-`Write(*)`-catchall tests are untouched and still pass; `cli.test.ts` still green (it only checks that `settings.json` exists, not its contents).
 
-- [ ] **Step 5: Re-run the integration file — the deny rules alone must still hold the write boundary**
+- [x] **Step 5: Re-run the integration file — the deny rules alone must still hold the write boundary**
 
 ```bash
 npx vitest run src/lib/runner/claude/__tests__/sandbox.integration.test.ts

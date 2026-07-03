@@ -37,10 +37,10 @@ describe('writePermissions', () => {
        expect(existsSync(join(workspaceDir, CLAUDE_DIR, SETTINGS_JSON))).toBe(true);
     });
 
-    it('lists the project root under additionalDirectories (native path)', () => {
+    it('does not emit additionalDirectories (ignored in untrusted dirs; the read grant is the --add-dir flag)', () => {
         writePermissions(workspaceDir, PROJECT_ROOT);
         const settings = JSON.parse(readFileSync(join(workspaceDir, CLAUDE_DIR, SETTINGS_JSON), 'utf8'));
-        expect(settings.permissions.additionalDirectories).toEqual([PROJECT_ROOT]);
+        expect(settings.permissions.additionalDirectories).toBeUndefined();
     });
 
     it('denies Write and Edit on the project subtree using the glob form', () => {

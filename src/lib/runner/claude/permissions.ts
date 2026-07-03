@@ -17,11 +17,15 @@ export function toPermissionGlob(absolutePath: string): string {
     const posix = absolutePath.replace(/\\/g, '/');
     return posix.startsWith('/') ? `/${posix}` : `//${posix}`;
 }
+
 /*
  Write the per-workspace sandbox config. The workspace (cwd) is writable under
- --permission-mode acceptEdits; this re-grants READ access to the project via
- additionalDirectories, then claws back WRITE/EDIT on the project with deny rules
- (deny overrides both allow and the acceptEdits mode)
+ --permission-mode acceptEdits; the runner re-grants READ access to the project with the
+ --add-dir CLI flag (NOT additionalDirectories here — Claude Code ignores that
+ permission-expanding entry in directories that were never trusted, and disposable
+ workspaces never are). This file carries only the deny rules that claw back WRITE/EDIT
+ on the project subtree; deny rules still load untrusted because they only shrink
+ permissions, and deny overrides both allow and the acceptEdits mode.
 */
 export function writePermissions(workspaceDir:  string, projectRoot: string): void {
     const settingsDir = join(workspaceDir, '.claude');
@@ -30,7 +34,6 @@ export function writePermissions(workspaceDir:  string, projectRoot: string): vo
     const glob = toPermissionGlob(projectRoot);
     const settings = {
         permissions: {
-            additionalDirectories: [projectRoot],
             deny: [`Write(${glob}/**)`, `Edit(${glob}/**)`],
         },
     };
