@@ -1,7 +1,7 @@
 # csi-opsx Thin `propose` Design Spec
 
 **Date:** 2026-06-19  
-**Status:** Draft  
+**Status:** Implemented (merged to master as PR #3)  
 
 ---
 

@@ -1,7 +1,7 @@
 # csi-opsx Review Workspace Read Grant via `--add-dir` — Design
 
 **Date:** 2026-07-02
-**Status:** Draft
+**Status:** Implemented 2026-07-03 (commits `b040657`, `f097ccd`, `790e9f5`; verified by the integration suite and a live `/csi-opsx:review` smoke run)
 
 ---
 

@@ -1,7 +1,7 @@
 # csi-opsx Design Spec
 
 **Date:** 2026-05-18  
-**Status:** Draft  
+**Status:** Living — updated in place as the system evolves (last sync: 2026-07-03)  
 
 ---
 
@@ -33,7 +33,7 @@
 
 - **npm package name:** `csi-opsx`
 - **CLI binary:** `csi-opsx`
-- **Skill namespace:** `/csi-opsx:explore`, `/csi-opsx:propose`, `/csi-opsx:apply`, `/csi-opsx:archive`
+- **Skill namespace:** `/csi-opsx:explore`, `/csi-opsx:propose`, `/csi-opsx:apply`, `/csi-opsx:archive`, `/csi-opsx:review`
 - **OpenSpec dependency:** regular dependency (not peer), so `npm install -g csi-opsx` installs OpenSpec automatically
 - **Language:** TypeScript, compiled to ESM via `tsup`
 - **Source root:** `src/` — compiled output goes to `dist/` (gitignored)
@@ -55,12 +55,14 @@ csi-opsx/
         SKILL.md            ← behavioral instructions (agent-neutral, asset not compiled)
       propose/
         SKILL.md            ← behavioral instructions (agent-neutral, asset not compiled)
-        agents.ts           ← ProposerAgent + ReviewerAgent configs
-        harness.ts          ← proposer→reviewer loop orchestration
       apply/
         SKILL.md            ← behavioral instructions (asset, not compiled)
       archive/
         SKILL.md            ← behavioral instructions (asset, not compiled)
+      review/
+        SKILL.md            ← behavioral instructions (agent-neutral, asset not compiled)
+        agents.ts           ← ReviewerAgent + ProposerAgent prompt builders
+        harness.ts          ← reviewer→proposer loop orchestration (runReviewHarness)
     lib/
       types.ts              ← ToolId, CommandName, AgentRole union types
       tools.ts              ← tool-id → skillsDir mapping (mirrors OpenSpec AI_TOOLS)
@@ -76,8 +78,9 @@ csi-opsx/
         claude/
           cli.ts            ← ClaudeCliRunner: spawns claude -p (acceptEdits, cwd=workspace); calls writePermissions internally
           permissions.ts    ← Claude-specific: builds deny-only .claude/settings.json (project write-deny rules; read grant is the --add-dir flag) + fs-path→glob helper
-      workspace.ts          ← temp dir creation, file copying, cleanup
-      loop.ts               ← loop controller: reads findings, decides continue/exit
+      artifacts.ts          ← change-name validation + deterministic artifact enumeration
+      workspace.ts          ← temp dir creation, file copying, cleanup, orphan sweep
+      loop.ts               ← review-findings-N.md frontmatter parsers (issues-found, status, latest round)
     skills/
       grill-me/
         SKILL.md            ← bundled third-party skill (Matt Pocock's grill-me; attribution line)
@@ -89,14 +92,17 @@ csi-opsx/
 ```json
 {
   "scripts": {
-    "build":     "tsup src/bin/cli.ts --format esm --dts",
-    "typecheck": "tsc --noEmit",
-    "dev":       "tsup src/bin/cli.ts --format esm --watch"
+    "build":      "tsup",
+    "typecheck":  "tsc --noEmit",
+    "dev":        "tsup --watch",
+    "test":       "vitest run",
+    "test:watch": "vitest"
   },
   "devDependencies": {
     "typescript": "^5.0.0",
     "tsup":       "^8.0.0",
-    "@types/node": "^20.0.0"
+    "@types/node": "^20.0.0",
+    "vitest":     "^1.0.0"
   }
 }
 ```
@@ -136,13 +142,13 @@ flowchart TD
 1. Runs `openspec update` (refreshes `/opsx:*` skills; does not touch `/csi-opsx:*` skills)
 2. Re-runs the skill installation step from `init` (idempotent)
 
-### `csi-opsx run --command=propose --workspace=<path> --change=<name> [--max-rounds=<n>]`
+### `csi-opsx run --command=review --workspace=<path> --change=<name> [--max-rounds=<n>]`
 
-Internal subcommand. Called by the `/csi-opsx:propose` skill via Bash. Not intended for direct developer use.
+Internal subcommand. Called by the `/csi-opsx:review` skill via Bash. Not intended for direct developer use. *(Was `--command=propose` until 2026-06-19 — see `2026-06-19-thin-propose-design.md`; the CLI now rejects that value.)*
 
 - `--change`: the name of the change folder to review (e.g. `add-auth`). The harness enumerates `openspec/changes/<name>/` itself to build the artifact list — see **Trust Boundary**. The name must be a single safe path segment.
-- `--max-rounds`: *(optional)* maximum number of reviewer→proposer rounds before the harness gives up and surfaces results for manual review. Defaults to 5 when omitted. Must be a positive integer.
-- Resolves runner, enumerates the change folder, executes the proposer/reviewer loop, prints summary on exit
+- `--max-rounds`: *(optional)* the number of reviewer→proposer rounds to run **this invocation**. On a resume these are added to the rounds already completed — a resume-relative budget, not an absolute round-number ceiling (see `2026-06-25-review-max-rounds-resume-design.md`). Defaults to 5 when omitted. Must be ≥ 1.
+- Resolves runner, enumerates the change folder, executes the reviewer→proposer loop, prints summary on exit
 
 ---
 
@@ -159,28 +165,24 @@ Runs `/opsx:explore` behavior and loads whatever skills its `## Skills` section 
 
 No harness, no subprocess, no file access enforcement — purely conversational.
 
-### `/csi-opsx:propose [max-rounds]`
+### `/csi-opsx:propose`
 
-Optional argument: an integer that overrides the default round cap (5). Example: `/csi-opsx:propose 3` runs at most 3 reviewer→proposer rounds.
+*(Updated 2026-06-19 — see `2026-06-19-thin-propose-design.md`; `propose` originally drove the review loop itself.)* A thin, skill-customizable wrapper around `/opsx:propose`:
 
-1. Follows `/opsx:propose` behavior to generate initial artifacts
-2. Resolves the change name via a cascade: an explicit `/csi-opsx:propose <name>` argument → the change just created/continued in this session → otherwise scan `openspec/changes/` and ask the user if more than one is active. It always passes one concrete `--change`.
-3. Guards against empty work: if no change folder is resolved or it has zero artifacts, stop with a notice — do not invoke the harness.
-4. Checks if Claude Code CLI is available:
-   - **Yes:** calls `csi-opsx run --command=propose --workspace . --change <name>` (with `--max-rounds=<integer>` appended if the user provided one); waits for harness to complete; surfaces summary
-   - **No:** prints notice that automated review loop requires Claude Code; artifacts remain as generated by standard propose; developer reviews manually
+1. Follows `/opsx:propose` behavior to generate the initial artifacts (`proposal.md`, `design.md`, `tasks.md`, and any spec files).
+2. Loads any skills named in its `## Skills` section (empty today).
+3. Surfaces the change name it just created and suggests the next step: `/csi-opsx:review <name>` (optionally with a round budget, e.g. `/csi-opsx:review <name> 3`).
 
-```mermaid
-flowchart TD
-    A([Developer invokes /csi-opsx:propose]) --> B[Follow /opsx:propose behavior\nGenerate initial artifacts]
-    B --> C["Resolve change name (cascade)\nEnumerate openspec/changes/name/"]
-    C --> D{Claude Code CLI\navailable?}
-    D -- Yes --> E["csi-opsx run --command=propose\n--workspace . --change name"]
-    E --> F[Harness runs\nproposer/reviewer loop]
-    F --> G([Surface summary to session])
-    D -- No --> H["Print: ⚠ Claude Code not detected\nAutomated review loop unavailable"]
-    H --> I([Artifacts as generated\nDeveloper reviews manually])
-```
+No harness, no runner detection — the loop is reached through `/csi-opsx:review`.
+
+### `/csi-opsx:review <name> [max-rounds]`
+
+Runs the automated reviewer→proposer loop on a change whose artifacts **already exist** — generated by `propose`, written by hand, or left behind by an earlier run that crashed or exhausted its round budget. Full design: `2026-06-16-review-command-design.md`. In outline:
+
+1. Resolves the change name (explicit argument, or list `openspec/changes/` and ask — never auto-select).
+2. Guards: the change folder must contain at least one artifact; otherwise stop with a notice — do not invoke the harness.
+3. Checks for a supported runner (Claude Code today); without one, the developer reviews manually.
+4. Runs `csi-opsx run --command=review --workspace . --change <name>` (with `--max-rounds=<n>` if the user gave an integer) and surfaces the exit summary.
 
 ### `/csi-opsx:apply`
 
@@ -206,7 +208,7 @@ Thin passthrough. Follows `/opsx:archive` behavior. No additional behavior in th
 
 **Scope and limits:**
 
-- Only `/csi-opsx:explore` ships a skill today — `grill-me`. `apply`/`archive` stay bare passthroughs (no empty `## Skills` section until they actually have a skill to register). `propose` is excluded: its reviewer→proposer loop *is* its behavior.
+- Only `/csi-opsx:explore` ships a skill today — `grill-me`. Every thin command (`explore`, `propose`, `apply`, `archive`) exposes a `## Skills` section as its extension hook (`propose`/`apply`/`archive` gained empty ones on 2026-06-19 with the thin-`propose` change). `review` has no `## Skills` hook: its reviewer→proposer loop *is* its behavior.
 - No per-session selective activation. To disable a skill, remove it from the command's `## Skills` list (or from `src/skills/`). The expectation is roughly one skill per command.
 
 **Departure from `grill-with-docs`.** The explore phase originally bundled Matt Pocock's `grill-with-docs` — the relentless interview *plus* a documentation system (a `CONTEXT.md` glossary and ADRs written inline). It was replaced by his plainer `grill-me` (the interview only), for two reasons: the doc machinery contradicted explore's own rule that it commits no artifacts, and it imposed a specific glossary/ADR workflow the phase did not need. Concretely, `src/skills/grill-with-docs/` (with its `ADR-FORMAT.md`/`CONTEXT-FORMAT.md`) became `src/skills/grill-me/` with a single `SKILL.md`, and `explore/SKILL.md` lost its inline "fallback grilling" block and `Outputs` section. User-facing docs for this live in the README's "Customising a command's behaviour with skills" section.
@@ -215,24 +217,26 @@ Thin passthrough. Follows `/opsx:archive` behavior. No additional behavior in th
 
 ---
 
-## Propose Harness
+## Review Harness
+
+*(Renamed 2026-06-19 — the loop originally ran under `propose`; see `2026-06-19-thin-propose-design.md`. Entry point: `runReviewHarness` in `src/commands/review/harness.ts`, dispatched from `HARNESS_RUNNERS` in `src/bin/cli.ts`.)*
 
 ### Runner Resolution
 
 ```
 resolveRunner():
   if claude CLI available (claude --version succeeds) → ClaudeCliRunner
-  else → null (skill falls back to /opsx:propose notice)
+  else → null (skill surfaces a no-runner notice; developer reviews manually)
 ```
 
 Future runners (CodexCliRunner, AnthropicSdkRunner, etc.) are added here as new features, each preceded by a dedicated research spike.
 
 ```mermaid
 flowchart TD
-    A["csi-opsx run --command=propose"] --> B{"claude --version\nsucceeds?"}
+    A["csi-opsx run --command=review"] --> B{"claude --version\nsucceeds?"}
     B -- Yes --> C[ClaudeCliRunner\nspawns claude -p subprocess\nno extra API key needed]
     B -- No --> D[null runner\nreturn fallback signal]
-    D --> E["Skill prints:\n⚠ Claude Code not detected\nFalling back to /opsx:propose"]
+    D --> E["Skill prints:\n⚠ No supported runner detected\nAutomated review loop unavailable"]
 
     F[Future runners] -. CodexCliRunner .-> G["codex -q subprocess\nOpenAI auth"]
     F -. AnthropicSdkRunner .-> H["Anthropic SDK\nANTHROPIC_API_KEY required\nuniversal fallback"]
@@ -245,13 +249,13 @@ flowchart TD
 flowchart TD
     Start([Harness starts]) --> CR[Crash recovery:\nsweep orphaned temp dirs (scoped)]
     CR --> RS["Resumability: scan review-findings-*.md\nFind highest round N + status"]
-    RS --> BRW["Build reviewer workspace\n<os-tmp>/csi-opsx-...-reviewer-N/\nReads artifacts + prev findings in place\nWrite: settings.json (project read-only)"]
-    BRW --> SR["Spawn: claude -p reviewer\n--permission-mode acceptEdits\ncwd: <os-tmp>/csi-opsx-...-reviewer-N/"]
+    RS --> BRW["Build reviewer workspace\n<os-tmp>/csi-opsx-...-reviewer-N/\nReads artifacts + prev findings in place\nWrite: deny-only settings.json\n(read grant = --add-dir flag)"]
+    BRW --> SR["Spawn: claude -p reviewer\n--permission-mode acceptEdits\n--add-dir projectRoot\ncwd: <os-tmp>/csi-opsx-...-reviewer-N/"]
     SR --> CB1["Copy back: review-findings-N.md → project\nClean up temp dir"]
     CB1 --> CHK{issues-found?}
     CHK -- "= 0" --> EXIT([Exit: print summary])
-    CHK -- "> 0" --> BPW["Build proposer workspace\n<os-tmp>/csi-opsx-...-proposer-N/\nCopy: artifacts + review-findings-N.md\nWrite: settings.json (project read-only)"]
-    BPW --> SP["Spawn: claude -p proposer\n--permission-mode acceptEdits\ncwd: <os-tmp>/csi-opsx-...-proposer-N/"]
+    CHK -- "> 0" --> BPW["Build proposer workspace\n<os-tmp>/csi-opsx-...-proposer-N/\nCopy: artifacts + review-findings-N.md\nWrite: deny-only settings.json\n(read grant = --add-dir flag)"]
+    BPW --> SP["Spawn: claude -p proposer\n--permission-mode acceptEdits\n--add-dir projectRoot\ncwd: <os-tmp>/csi-opsx-...-proposer-N/"]
     SP --> CB2["Copy back: artifacts + findings (findings last)\nproposer set is-solved + status\nClean up temp dir"]
     CB2 --> INC[N++]
     INC --> BRW
@@ -262,15 +266,14 @@ flowchart TD
 ```mermaid
 sequenceDiagram
     participant Dev as Developer
-    participant Skill as /csi-opsx:propose
+    participant Skill as /csi-opsx:review
     participant Harness as csi-opsx harness
     participant Rev as Reviewer Agent
     participant Prop as Proposer Agent
 
-    Dev->>Skill: invoke /csi-opsx:propose
-    Skill->>Skill: follow /opsx:propose behavior
-    Note over Skill: generates proposal.md, design.md,<br/>tasks.md, spec.md
-    Skill->>Harness: csi-opsx run --command=propose --change <name>
+    Dev->>Skill: invoke /csi-opsx:review <name>
+    Note over Skill: artifacts already exist<br/>(from /csi-opsx:propose or by hand)
+    Skill->>Harness: csi-opsx run --command=review --change <name>
 
     loop Until issues-found = 0
         Harness->>Rev: claude -p reviewer prompt
@@ -362,7 +365,7 @@ Cleanup:
 
 - A run deletes its **own** directory on exit (success or handled failure) in a `finally`.
 - Startup sweeps **orphaned** directories left by hard crashes, scoped to the current `<project>-<change>` prefix — never a global wipe, so a concurrent run on a *different* change or project is untouched.
-- Running two propose loops on the **same** change at once is unsupported; the crash model bounds the damage to wasted work (copy-back commits only on a clean exit), not a corrupted project.
+- Running two review loops on the **same** change at once is unsupported; the crash model bounds the damage to wasted work (copy-back commits only on a clean exit), not a corrupted project.
 
 ### `review-findings-N.md` Format
 
@@ -419,18 +422,26 @@ The harness derives the artifact list by **enumerating the change folder** (`ope
 
 On clean exit (issues-found = 0):
 ```
-✓ csi-opsx propose complete
+✓ Review complete
   Rounds: 3
   Final review: 0 issues found
-  Artifacts: proposal.md, design.md, tasks.md, openspec/specs/auth.md
+  Issues found per round: 4, 2, 0
+  Artifacts: proposal.md, design.md, tasks.md, specs/auth/spec.md
   Review history: review-findings-1.md, review-findings-2.md, review-findings-3.md
+```
+
+On an exhausted round budget (no convergence this pass):
+```
+⚠ Review: ran 2 rounds this pass (through round 2) without converging to 0 issues.
+  Issues found per round: 4, 2
+  Review history: review-findings-1.md, review-findings-2.md
+  Run /csi-opsx:review again to run more rounds, or review the artifacts and findings files manually.
 ```
 
 On fallback (no runner available):
 ```
-⚠ csi-opsx: Claude Code not detected.
+⚠ csi-opsx: No runner available.
   Automated review loop unavailable.
-  Artifacts generated via standard /opsx:propose.
   Install Claude Code to enable the automated review loop.
 ```
 
@@ -472,6 +483,7 @@ Skills and commands are distinct mechanisms in Claude Code (and most other agent
 {toolDir}/skills/csi-opsx-propose/SKILL.md
 {toolDir}/skills/csi-opsx-apply/SKILL.md
 {toolDir}/skills/csi-opsx-archive/SKILL.md
+{toolDir}/skills/csi-opsx-review/SKILL.md
 ```
 
 **Command files** — create the invocable slash commands (e.g. `/csi-opsx:propose`). Format, content, and path are agent-specific and generated by the adapter in `src/lib/adapters/`. For Claude Code:
@@ -480,6 +492,7 @@ Skills and commands are distinct mechanisms in Claude Code (and most other agent
 .claude/commands/csi-opsx/propose.md   → /csi-opsx:propose
 .claude/commands/csi-opsx/apply.md     → /csi-opsx:apply
 .claude/commands/csi-opsx/archive.md   → /csi-opsx:archive
+.claude/commands/csi-opsx/review.md    → /csi-opsx:review
 ```
 
 The command file is a thin entry point that references the skill behavior. The skill file holds the full multi-step instructions. For agents that only support one mechanism (skills OR commands, not both), the adapter installs whichever is appropriate for that agent.
@@ -494,7 +507,7 @@ The command file is a thin entry point that references the skill behavior. The s
 
 | What to extend | Where to add it |
 |---|---|
-| New wrapper command | Add `src/commands/{name}/SKILL.md`; add one import to `src/bin/cli.ts` |
+| New wrapper command | Add `src/commands/{name}/SKILL.md`; add the name to `COMMAND_NAMES` in `src/lib/types.ts` |
 | New harnessed command | Add `src/commands/{name}/SKILL.md`, `harness.ts`, `agents.ts`; wire `run --command={name}` |
 | New runner adapter | Add `src/lib/runner/{name}/` with `cli.ts` (plus any agent-specific helpers like `permissions.ts`, `config.ts`); add detection check in `src/lib/runner/index.ts` |
 | New agent for skill install | Add entry to `src/lib/tools.ts`; add adapter to `src/lib/adapters/` |

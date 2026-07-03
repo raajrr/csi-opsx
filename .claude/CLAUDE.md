@@ -38,7 +38,8 @@ Each command lives under `src/commands/{name}/` with up to three files:
 | `runner/index.ts` | `resolveRunner()` — returns first available runner or `null` |
 | `runner/claude/cli.ts` | `ClaudeCliRunner` — spawns `claude -p` via `child_process.spawnSync`; when `projectRoot` is provided, grants project reads with `--add-dir` and calls `writePermissions` for the write-deny rules |
 | `runner/claude/permissions.ts` | `writePermissions()` — writes `.claude/settings.json` into the temp workspace (Claude-specific helper; not used directly by the harness) |
-| `workspace.ts` | `createWorkspace()`, `copyBack()`, `cleanupWorkspace()` — temp dir lifecycle |
+| `workspace.ts` | `createWorkspace()`, `copyBack()`, `cleanupWorkspace()`, `sweepOrphanWorkspaces()` — temp dir lifecycle + crash-orphan sweep |
+| `artifacts.ts` | `validateChangeName()`, `getChangeDirectory()`, `enumerateChangeArtifacts()` — change-name path safety + deterministic artifact enumeration |
 | `loop.ts` | `parseIssuesFound()`, `parseStatus()`, `findLatestFindingsRound()`, `getFindingsPath()` — parse `review-findings-N.md` frontmatter |
 | `types.ts` | `ToolId`, `CommandName`, `AgentRole` union types + `COMMAND_NAMES` |
 | `tools.ts` | tool-id → skillsDir mapping (mirrors OpenSpec `AI_TOOLS`) |
