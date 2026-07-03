@@ -1,5 +1,7 @@
 # csi-opsx Propose Harness Implementation Plan
 
+> **Historical (executed May–June 2026):** two mechanisms in this plan were later changed — the harness now lives under `src/commands/review/` as `runReviewHarness` (thin-`propose`, 2026-06-19), and the project read grant is now the `--add-dir` CLI flag rather than settings `additionalDirectories` (2026-07-02). The living spec is `../specs/2026-05-18-csi-opsx-design.md`.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Replace the propose-harness stub with a working reviewer→proposer loop that spawns `claude -p` in isolated temp workspaces — reviewing the artifacts of one OpenSpec change folder until the reviewer reports zero issues.

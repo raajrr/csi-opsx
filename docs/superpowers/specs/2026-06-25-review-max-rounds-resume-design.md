@@ -1,7 +1,7 @@
 # csi-opsx Review `--max-rounds` Relative-Resume Design
 
 **Date:** 2026-06-25
-**Status:** Draft
+**Status:** Implemented (merged to master as PR #4, 2026-06-27)
 
 ---
 

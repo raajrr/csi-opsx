@@ -1,7 +1,7 @@
 # csi-opsx Review Command Design Spec
 
 **Date:** 2026-06-16  
-**Status:** Draft  
+**Status:** Implemented (shipped June 2026; the harness entry point it reuses was later renamed `runReviewHarness` and moved under `src/commands/review/` — see `2026-06-19-thin-propose-design.md`)  
 
 ---
 

@@ -36,9 +36,10 @@ Each command lives under `src/commands/{name}/` with up to three files:
 |---|---|
 | `runner/types.ts` | `Runner` interface, `RunnerOptions`, and `RunnerResult` type |
 | `runner/index.ts` | `resolveRunner()` — returns first available runner or `null` |
-| `runner/claude/cli.ts` | `ClaudeCliRunner` — spawns `claude -p` via `child_process.spawnSync`; calls `writePermissions` internally when `writablePaths` is provided |
+| `runner/claude/cli.ts` | `ClaudeCliRunner` — spawns `claude -p` via `child_process.spawnSync`; when `projectRoot` is provided, grants project reads with `--add-dir` and calls `writePermissions` for the write-deny rules |
 | `runner/claude/permissions.ts` | `writePermissions()` — writes `.claude/settings.json` into the temp workspace (Claude-specific helper; not used directly by the harness) |
-| `workspace.ts` | `createWorkspace()`, `copyBack()`, `cleanupWorkspace()` — temp dir lifecycle |
+| `workspace.ts` | `createWorkspace()`, `copyBack()`, `cleanupWorkspace()`, `sweepOrphanWorkspaces()` — temp dir lifecycle + crash-orphan sweep |
+| `artifacts.ts` | `validateChangeName()`, `getChangeDirectory()`, `enumerateChangeArtifacts()` — change-name path safety + deterministic artifact enumeration |
 | `loop.ts` | `parseIssuesFound()`, `parseStatus()`, `findLatestFindingsRound()`, `getFindingsPath()` — parse `review-findings-N.md` frontmatter |
 | `types.ts` | `ToolId`, `CommandName`, `AgentRole` union types + `COMMAND_NAMES` |
 | `tools.ts` | tool-id → skillsDir mapping (mirrors OpenSpec `AI_TOOLS`) |
@@ -53,22 +54,23 @@ Each command lives under `src/commands/{name}/` with up to three files:
 `review` drives this loop through `runReviewHarness` (`src/commands/review/harness.ts`), dispatched from `HARNESS_RUNNERS` in `src/bin/cli.ts`. `propose` no longer drives the harness — it generates artifacts and hands off to `review`, which runs the loop on artifacts that already exist.
 
 ```
-resolve runner → start round 1
+resolve runner → resume scan → start round N
   loop:
-    create reviewer workspace (temp dir, copy artifacts)
-    runner.run({ prompt: <reviewer>, workspaceDir, writablePaths: [review-findings-N.md] })
-      └─ ClaudeCliRunner writes .claude/settings.json then spawns claude -p
+    create reviewer workspace (empty temp dir)
+    runner.run({ prompt: <reviewer>, workspaceDir, projectRoot })
+      └─ ClaudeCliRunner writes .claude/settings.json (project write-deny rules) then spawns
+         claude -p --permission-mode acceptEdits --setting-sources project --add-dir "<projectRoot>"
     copy back review-findings-N.md → project
     parse issues-found
     if issues-found == 0 → exit (print summary)
     create proposer workspace (temp dir, copy artifacts + findings)
-    runner.run({ prompt: <proposer>, workspaceDir, writablePaths: [...artifacts, findings] })
-      └─ ClaudeCliRunner writes .claude/settings.json then spawns claude -p
+    runner.run({ prompt: <proposer>, workspaceDir, projectRoot })
+      └─ (same runner mechanism)
     copy back artifacts + findings → project
     round++
 ```
 
-Agents read project context (`CLAUDE.md`, `openspec/`, `docs/`) from absolute paths in their prompt — no copying needed since `Read` is unrestricted. Write access is restricted via `RunnerOptions.writablePaths`, which `ClaudeCliRunner` translates into a workspace-scoped `.claude/settings.json` (allow-list per file, deny `Write(*)` catchall) before spawning. The harness does not import `permissions` directly — each runner encapsulates its own sandbox mechanism.
+Agents read project context (`CLAUDE.md`, `openspec/`, `docs/`) from absolute paths in their prompt — no copying needed because the runner re-grants the project with the `--add-dir` CLI flag. The grant must be the flag, not `additionalDirectories` in the workspace `.claude/settings.json`: Claude Code ignores that permission-expanding entry in directories that were never trusted, and the disposable per-round workspaces never are. The workspace `settings.json` (written by `writePermissions`) carries only `deny` rules for `Write`/`Edit` on the project subtree — permission-shrinking rules still load untrusted — so the project stays read-only while the workspace cwd is writable under `acceptEdits`. The harness does not import `permissions` directly — each runner encapsulates its own sandbox mechanism.
 
 ### review-findings-N.md format
 

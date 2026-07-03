@@ -19,7 +19,7 @@
 ## How to resume (next-session checklist)
 
 1. Skim this whole doc (it's the recap). The original trust-boundary doc has the deeper *why* behind the restructure if needed.
-2. ✅ **DONE (2026-05-30).** Ran the spike — see §5.6. Mechanism: `acceptEdits` + `cwd = workspace` is a two-way boundary; re-grant read with `additionalDirectories: [projectRoot]` and keep the project read-only with `deny: [Write/Edit(//c/<proj>/**)]` (MSYS `//c/` glob form on Windows); don't allow Bash; assert **file state** in tests.
+2. ✅ **DONE (2026-05-30).** Ran the spike — see §5.6. Mechanism: `acceptEdits` + `cwd = workspace` is a two-way boundary; re-grant read with `additionalDirectories: [projectRoot]` and keep the project read-only with `deny: [Write/Edit(//c/<proj>/**)]` (MSYS `//c/` glob form on Windows); don't allow Bash; assert **file state** in tests. *(2026-07-02: the read-grant channel has since moved to the `--add-dir` CLI flag — Claude Code now ignores `additionalDirectories` in never-trusted directories; see `../specs/2026-07-02-review-add-dir-read-grant-design.md`.)*
 3. ✅ **DONE (2026-05-30).** Spec updated: added "Trust Boundary" + "Workspace Isolation & Write Sandbox" sections, replaced `--artifacts` with `--change`, removed the broken `settings.json` example, refuted "Read is unrestricted," and updated the mermaid diagrams + Open Questions.
 4. **Revise Plan 2** (`docs/superpowers/plans/2026-05-18-csi-opsx-propose-harness.md`) via the `writing-plans` skill: add the artifacts-module task, rework the permissions task (Task 5), revise Tasks 7/8/9, and add the integration-test + verification gates.
 5. **Implement** (user types the code) with TDD, in the simple/step-by-step style.
@@ -131,6 +131,8 @@ We ran the spike (and several follow-ups) with real `claude -p`, reading both th
 10. **A `deny`-rule block leaves `permission_denials` EMPTY** (it's a pre-emptive block, not an interactive auto-deny). Ground truth for the block is the **file state** (file absent/unchanged), so tests must assert that.
 
 **Adopted mechanism (the user's read-in-place + deny-write design):**
+
+> **Superseded in part (2026-07-02):** Claude Code now ignores `additionalDirectories` from settings in never-trusted directories, so the read grant moved to the `--add-dir` CLI flag; the deny rules and everything else below still stand. See `../specs/2026-07-02-review-add-dir-read-grant-design.md`.
 
 ```
 claude -p --permission-mode acceptEdits --setting-sources project   (cwd = workspace)
